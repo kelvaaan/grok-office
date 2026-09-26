@@ -1,0 +1,16 @@
+{
+  "name": "grok-office",
+  "version": "1.0.0",
+  "description": "A pixel-art virtual office whose employees are your Grok Bot agents.",
+  "license": "MIT",
+  "type": "module",
+  "main": "server.js",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node server.js",
+    "demo": "node scripts/demo.mjs",
+    "check": "node scripts/check-sprites.mjs"
+  },
+  "keywords": ["pixel-art", "virtual-office", "agents", "grok"],
+  "dependencies": {}
+}

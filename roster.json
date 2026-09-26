@@ -1,0 +1,35 @@
+{
+  "office": {
+    "name": "Grok HQ"
+  },
+  "employees": [
+    {
+      "id": "sameer",
+      "name": "Sameer",
+      "role": "Software engineer",
+      "desk": 0,
+      "look": { "hair": "#1c1512", "hairStyle": "spiky", "skin": "#b57d55", "shirt": "#2f6fdb", "pants": "#2a2e3d", "shoes": "#15161a" }
+    },
+    {
+      "id": "jeremy",
+      "name": "Jeremy",
+      "role": "Investment portfolio analyst",
+      "desk": 1,
+      "look": { "hair": "#6b4426", "hairStyle": "short", "skin": "#f0c8a2", "shirt": "#e9ebf0", "tie": "#b3263a", "glasses": true, "pants": "#34384a", "shoes": "#3a2518" }
+    },
+    {
+      "id": "francesca",
+      "name": "Francesca",
+      "role": "",
+      "desk": 2,
+      "look": { "hair": "#8e3a1c", "hairStyle": "long", "skin": "#f6d3b5", "shirt": "#8e52c4", "pants": "#23252f", "shoes": "#4a1f2a" }
+    },
+    {
+      "id": "jared",
+      "name": "Jared",
+      "role": "Teammate",
+      "desk": 3,
+      "look": { "hair": "#241c18", "hairStyle": "curly", "skin": "#7c4f30", "shirt": "#27a36a", "pants": "#3b3f52", "shoes": "#e8e8e8" }
+    }
+  ]
+}

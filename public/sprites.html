@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Grok Office — sprite sheet</title>
+<style>body{background:#2a2d38;margin:0;padding:12px;color:#fff;font:12px monospace}canvas{image-rendering:pixelated}</style>
+<canvas id="c"></canvas>
+<script type="module">
+import { buildCharacter, resolveLook } from './js/sprites.js';
+const roster = await (await fetch('/api/agents')).json();
+const agents = [...roster.agents, { id: 'demo-bun', look: { hairStyle: 'bun' } }, { id: 'demo-bald', look: { hairStyle: 'bald' } }];
+const S = 5, names = ['down', 'up', 'right', 'left'];
+const c = document.getElementById('c');
+c.width = 16 * S * 16; c.height = agents.length * 26 * S;
+const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+agents.forEach((a, row) => {
+  const f = buildCharacter(resolveLook(a.id, a.look));
+  const frames = [...names.flatMap((n) => f[n]), f.sitDown, f.sitUp, f.sleep, f.blinkDown];
+  frames.forEach((img, i) => g.drawImage(img, i * 17 * S, row * 26 * S, 16 * S, 24 * S));
+});
+</script>

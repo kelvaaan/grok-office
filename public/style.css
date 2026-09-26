@@ -1,0 +1,49 @@
+:root {
+  --bg: #0b0c10;
+  --panel: #14161d;
+  --line: #262a35;
+  --text: #e8eaf0;
+  --muted: #8a90a0;
+  --accent: #ffffff;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.4 ui-sans-serif, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; overflow: hidden; }
+#topbar { height: 48px; display: flex; align-items: center; gap: 16px; padding: 0 14px; border-bottom: 1px solid var(--line); background: #0e0f14; }
+.brand { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.brand strong { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.08em; text-transform: uppercase; font-size: 15px; }
+.brand .sub { color: var(--muted); font-size: 12px; }
+.logo { width: 18px; height: 18px; border: 2px solid #fff; border-radius: 50%; position: relative; display: inline-block; }
+.logo::after { content: ''; position: absolute; left: 50%; top: -3px; width: 2px; height: 20px; background: #fff; transform: translateX(-50%) rotate(45deg); }
+#roster { display: flex; gap: 6px; flex: 1; overflow-x: auto; scrollbar-width: none; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: #171920; color: var(--text); cursor: pointer; font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
+.chip:hover { border-color: #3a3f4d; }
+.chip.active { border-color: #ffc53d; background: #231f12; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.tools { display: flex; align-items: center; gap: 10px; }
+.clock { font: 600 13px ui-monospace, Menlo, monospace; color: var(--muted); }
+.conn { width: 8px; height: 8px; border-radius: 50%; background: #d9534f; box-shadow: 0 0 0 3px rgba(217,83,79,0.15); }
+.conn.ok { background: #45e27a; box-shadow: 0 0 0 3px rgba(69,226,122,0.15); }
+.zoom { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.zoom button { background: #171920; color: var(--text); border: 0; padding: 5px 10px; cursor: pointer; font: 600 13px ui-monospace, Menlo, monospace; }
+.zoom button + button { border-left: 1px solid var(--line); }
+.zoom button:hover { background: #1f222b; }
+#stage { position: absolute; top: 48px; left: 0; right: 0; bottom: 0; }
+#office { display: block; image-rendering: pixelated; touch-action: none; }
+#panel { position: absolute; top: 14px; right: 14px; width: 320px; max-width: calc(100% - 28px); background: rgba(20,22,29,0.96); border: 1px solid var(--line); border-radius: 12px; padding: 14px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+#panel[hidden] { display: none; }
+.p-head { display: flex; gap: 12px; align-items: center; }
+#portrait { width: 80px; height: 104px; image-rendering: pixelated; background: radial-gradient(circle at 50% 60%, #252a38, #151821); border-radius: 10px; border: 1px solid var(--line); flex: none; }
+#panel h2 { margin: 0 0 2px; font: 700 18px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.role { color: #c9cdd8; font-size: 13px; margin-bottom: 8px; }
+.muted { color: var(--muted) !important; font-style: italic; }
+.status-pill { --c: #888; display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: color-mix(in srgb, var(--c) 18%, transparent); color: var(--c); border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); }
+.status-pill::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+dl { margin: 14px 0 0; }
+dt { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 10px; }
+dd { margin: 3px 0 0; }
+.message { white-space: pre-wrap; word-break: break-word; background: #0e1016; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; max-height: 180px; overflow: auto; }
+code { font: 12px ui-monospace, Menlo, monospace; color: var(--muted); }
+.close { position: absolute; top: 8px; right: 10px; background: none; border: 0; color: var(--muted); font-size: 22px; cursor: pointer; line-height: 1; }
+.close:hover { color: var(--text); }
+@media (max-width: 720px) { .brand .sub, .clock { display: none; } }
