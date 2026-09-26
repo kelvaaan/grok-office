@@ -50,11 +50,17 @@ Environment variables:
 | `ROSTER_FILE` | `./roster.json` | Employee roster |
 | `DATA_DIR` | `./data` | Where `state.json` is written |
 
-Run it in the background:
+Run it in the background (the `perl … setsid` wrapper puts it in its own session so it
+survives the terminal/tool that started it closing; plain `nohup … &` works in a normal terminal):
 
 ```bash
-nohup node server.js >> /tmp/grok-office.log 2>&1 & disown
+cd ~/src/grok-office
+perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' nohup node server.js >> /tmp/grok-office.log 2>&1 < /dev/null &
+LOOPS=0 perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' nohup node scripts/demo.mjs >> /tmp/grok-office-demo.log 2>&1 < /dev/null &
 ```
+
+Stop it with `pkill -f 'node server.js'` / `pkill -f 'scripts/demo.mjs'` (run from a directory-agnostic shell;
+check with `lsof -nP -iTCP:3200 -sTCP:LISTEN`).
 
 ### Demo mode
 

@@ -296,6 +296,7 @@ server.listen(PORT, HOST, () => {
 
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {
+    console.log(`[grok-office] received ${sig}, saving state and exiting`);
     clearTimeout(saveTimer);
     try {
       fs.mkdirSync(DATA_DIR, { recursive: true });
