@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Grok Office — tiny zero-dependency server.
+// Grok Office (Orbit Group edition) — tiny zero-dependency server.
 // Serves the static pixel office from ./public, exposes a status API and pushes
 // live updates to browsers with Server-Sent Events. Binds to 127.0.0.1 only.
 import http from 'node:http';
@@ -12,6 +12,8 @@ const PUBLIC_DIR = path.join(ROOT, 'public');
 const ROSTER_FILE = process.env.ROSTER_FILE || path.join(ROOT, 'roster.json');
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
+const OFFICE_CONFIG_FILE = process.env.OFFICE_CONFIG_FILE || path.join(ROOT, 'office-config.json');
+const OFFICE_FILE = path.join(DATA_DIR, 'office.json');
 const PORT = Number(process.env.PORT || 3200);
 const HOST = process.env.HOST || '127.0.0.1';
 const DESK_COUNT = 8; // desks drawn in the office (index 0..7)
@@ -24,7 +26,7 @@ const ID_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/;
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
-let officeName = 'Grok HQ';
+let officeName = 'Orbit Group'; // fallback only; the customizable name lives in office settings
 let roster = []; // employees from roster.json
 let state = { agents: {}, extras: [] }; // persisted
 
@@ -52,7 +54,7 @@ function normalizeEmployee(e) {
 
 function loadRoster() {
   const data = readJson(ROSTER_FILE, { employees: [] });
-  officeName = (data.office && data.office.name) || 'Grok HQ';
+  officeName = (data.office && data.office.name) || 'Orbit Group';
   const seen = new Set();
   roster = [];
   for (const raw of data.employees || []) {
@@ -124,10 +126,105 @@ function publicAgent(e) {
 
 function snapshot() {
   return {
-    office: { name: officeName, desks: DESK_COUNT },
+    office: { name: office.name || officeName, desks: DESK_COUNT, settings: office },
     agents: withDesks(allEmployees()).map(publicAgent),
     serverTime: new Date().toISOString(),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Office customization (walls, floors, accessories, branding)
+// Defaults, allowed options and presets live in the committed office-config.json;
+// the user's choices are persisted to data/office.json.
+// ---------------------------------------------------------------------------
+const officeConfig = readJson(OFFICE_CONFIG_FILE, null);
+if (!officeConfig || !officeConfig.defaults || !officeConfig.options) {
+  console.error(`[grok-office] ${OFFICE_CONFIG_FILE} is missing or invalid`);
+  process.exit(1);
+}
+const OPT = officeConfig.options;
+const ids = (list) => new Set((list || []).map((o) => o.id));
+const ENUMS = {
+  sign: ids(OPT.sign), lighting: ids(OPT.lighting), accent: ids(OPT.accent), monitors: ids(OPT.monitors),
+  plantStyle: ids(OPT.plantStyle), rugColor: ids(OPT.rugColor), sofaColor: ids(OPT.sofaColor),
+  preset: new Set([...ids(officeConfig.presets), 'custom']),
+};
+const WALL_ROOMS = ids(OPT.wallRooms), WALLS = ids(OPT.walls);
+const FLOOR_ROOMS = ids(OPT.rooms), FLOORS = ids(OPT.floors);
+const ACCESSORIES = ids(OPT.accessories);
+const cleanText = (v) => String(v).replace(/[\u0000-\u001f\u007f<>]/g, '').replace(/\s+/g, ' ').trim();
+const clone = (o) => JSON.parse(JSON.stringify(o));
+
+// Validate a (partial) settings object and merge it onto `base`. Returns {settings} or {errors}.
+function mergeOffice(base, patch) {
+  const errors = [];
+  const out = clone(base);
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return { errors: ['body must be a JSON object'] };
+  for (const [k, v] of Object.entries(patch)) {
+    if (k === 'name') {
+      const t = typeof v === 'string' ? cleanText(v) : '';
+      if (!t || t.length > 32) errors.push('name must be 1-32 characters'); else out.name = t;
+    } else if (ENUMS[k]) {
+      if (!ENUMS[k].has(v)) errors.push(`${k} must be one of ${[...ENUMS[k]].join(', ')}`); else out[k] = v;
+    } else if (k === 'walls' || k === 'floors') {
+      const rooms = k === 'walls' ? WALL_ROOMS : FLOOR_ROOMS, allowed = k === 'walls' ? WALLS : FLOORS;
+      if (!v || typeof v !== 'object' || Array.isArray(v)) { errors.push(`${k} must be an object`); continue; }
+      for (const [room, val] of Object.entries(v)) {
+        if (!rooms.has(room)) errors.push(`${k}.${room}: unknown room (use ${[...rooms].join(', ')})`);
+        else if (!allowed.has(val)) errors.push(`${k}.${room} must be one of ${[...allowed].join(', ')}`);
+        else out[k][room] = val;
+      }
+    } else if (k === 'accessories') {
+      if (!v || typeof v !== 'object' || Array.isArray(v)) { errors.push('accessories must be an object'); continue; }
+      for (const [item, val] of Object.entries(v)) {
+        if (!ACCESSORIES.has(item)) errors.push(`accessories.${item}: unknown item`);
+        else if (typeof val !== 'boolean') errors.push(`accessories.${item} must be true or false`);
+        else out.accessories[item] = val;
+      }
+    } else if (k === 'updatedAt') {
+      // ignored (server-maintained)
+    } else {
+      errors.push(`unknown setting "${k}"`);
+    }
+  }
+  return errors.length ? { errors } : { settings: out };
+}
+
+const OFFICE_DEFAULTS = (() => {
+  const r = mergeOffice({ ...clone(officeConfig.defaults), walls: {}, floors: {}, accessories: {} }, officeConfig.defaults);
+  if (r.errors) { console.error('[grok-office] office-config.json defaults are invalid:', r.errors.join('; ')); process.exit(1); }
+  return r.settings;
+})();
+
+let office = clone(OFFICE_DEFAULTS);
+function loadOffice() {
+  const saved = readJson(OFFICE_FILE, null);
+  if (!saved) return;
+  // Merge key by key so one stale/invalid value doesn't throw away the rest.
+  for (const [k, v] of Object.entries(saved)) {
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      for (const [kk, vv] of Object.entries(v)) {
+        const r = mergeOffice(office, { [k]: { [kk]: vv } });
+        if (r.settings) office = r.settings;
+      }
+    } else {
+      const r = mergeOffice(office, { [k]: v });
+      if (r.settings) office = r.settings;
+    }
+  }
+}
+function saveOffice() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const tmp = OFFICE_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(office, null, 2));
+    fs.renameSync(tmp, OFFICE_FILE);
+  } catch (err) {
+    console.error('[grok-office] failed to save office settings:', err.message);
+  }
+}
+function officePayload() {
+  return { settings: office, defaults: OFFICE_DEFAULTS, options: OPT, presets: officeConfig.presets || [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +332,28 @@ const server = http.createServer(async (req, res) => {
   try {
     if (p === '/api/agents' && req.method === 'GET') return sendJson(res, 200, snapshot());
 
+    if (p === '/api/office' && req.method === 'GET') return sendJson(res, 200, officePayload());
+    if ((p === '/api/office' && req.method === 'PUT') || (p === '/api/office/reset' && req.method === 'POST')) {
+      if (!String(req.headers['content-type'] || '').includes('application/json')) {
+        return sendJson(res, 415, { error: 'Content-Type must be application/json' });
+      }
+      let body;
+      try { body = JSON.parse((await readBody(req, 16 * 1024)) || '{}'); } catch { return sendJson(res, 400, { error: 'invalid JSON' }); }
+      let next;
+      if (p === '/api/office/reset') next = clone(OFFICE_DEFAULTS);
+      else {
+        // PUT merges a partial object; send {"replace": true, ...} to start from defaults.
+        const { replace, ...patch } = body && typeof body === 'object' ? body : {};
+        const r = mergeOffice(replace === true ? OFFICE_DEFAULTS : office, patch);
+        if (r.errors) return sendJson(res, 400, { error: 'invalid settings', errors: r.errors });
+        next = r.settings;
+      }
+      office = next;
+      saveOffice();
+      broadcast('office', office);
+      return sendJson(res, 200, { ok: true, settings: office });
+    }
+
     if (p === '/api/status' && req.method === 'POST') {
       // Requiring a JSON content type forces a CORS preflight for cross-origin
       // pages (which we never approve), so random websites cannot post here.
@@ -278,6 +397,7 @@ const server = http.createServer(async (req, res) => {
 // ---------------------------------------------------------------------------
 loadState();
 loadRoster();
+loadOffice();
 
 // Pick up roster.json edits without a restart.
 fs.watchFile(ROSTER_FILE, { interval: 2000 }, () => {
@@ -288,7 +408,7 @@ fs.watchFile(ROSTER_FILE, { interval: 2000 }, () => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`[grok-office] ${officeName} is open at http://${HOST === '0.0.0.0' ? '127.0.0.1' : HOST}:${PORT}/ (${allEmployees().length} employees)`);
+  console.log(`[grok-office] ${office.name} is open at http://${HOST === '0.0.0.0' ? '127.0.0.1' : HOST}:${PORT}/ (${allEmployees().length} employees)`);
   if (HOST !== '127.0.0.1' && HOST !== 'localhost' && HOST !== '::1') {
     console.warn('[grok-office] WARNING: not bound to loopback; the status API has no authentication.');
   }

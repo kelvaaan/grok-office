@@ -1,0 +1,481 @@
+{
+  "defaults": {
+    "name": "Orbit Group",
+    "sign": "logo",
+    "preset": "orbit-classic",
+    "lighting": "auto",
+    "walls": {
+      "work": "charcoal",
+      "meeting": "charcoal",
+      "lounge": "charcoal"
+    },
+    "accent": "none",
+    "floors": {
+      "work": "wood-honey",
+      "meeting": "carpet-grey",
+      "lounge": "tile-blue",
+      "kitchen": "checker-cream"
+    },
+    "accessories": {
+      "plants": true,
+      "bookshelves": true,
+      "whiteboards": true,
+      "serverRacks": true,
+      "pingPong": true,
+      "arcade": true,
+      "neon": true,
+      "clock": true,
+      "windows": true,
+      "coffeeMachine": true,
+      "beanBags": true,
+      "rugs": true,
+      "artwork": true,
+      "meetingTv": true,
+      "collabTable": true,
+      "printer": true,
+      "deskItems": true,
+      "deskLamps": false
+    },
+    "monitors": 1,
+    "plantStyle": "mixed",
+    "rugColor": "sunset",
+    "sofaColor": "charcoal"
+  },
+  "options": {
+    "sign": [
+      {
+        "id": "logo",
+        "label": "Logo"
+      },
+      {
+        "id": "text",
+        "label": "Text"
+      }
+    ],
+    "lighting": [
+      {
+        "id": "auto",
+        "label": "Follow clock"
+      },
+      {
+        "id": "day",
+        "label": "Day"
+      },
+      {
+        "id": "dusk",
+        "label": "Dusk"
+      },
+      {
+        "id": "night",
+        "label": "Night"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "work",
+        "label": "Work room"
+      },
+      {
+        "id": "meeting",
+        "label": "Meeting room"
+      },
+      {
+        "id": "lounge",
+        "label": "Lounge"
+      },
+      {
+        "id": "kitchen",
+        "label": "Kitchen"
+      }
+    ],
+    "wallRooms": [
+      {
+        "id": "work",
+        "label": "Work room"
+      },
+      {
+        "id": "meeting",
+        "label": "Meeting room"
+      },
+      {
+        "id": "lounge",
+        "label": "Lounge & kitchen"
+      }
+    ],
+    "walls": [
+      {
+        "id": "charcoal",
+        "label": "Charcoal"
+      },
+      {
+        "id": "black",
+        "label": "Orbit black"
+      },
+      {
+        "id": "warm-white",
+        "label": "Warm white"
+      },
+      {
+        "id": "navy",
+        "label": "Navy"
+      },
+      {
+        "id": "sage",
+        "label": "Sage green"
+      },
+      {
+        "id": "brick",
+        "label": "Brick"
+      },
+      {
+        "id": "wood-panel",
+        "label": "Wood panel"
+      },
+      {
+        "id": "terracotta",
+        "label": "Terracotta"
+      }
+    ],
+    "accent": [
+      {
+        "id": "none",
+        "label": "None"
+      },
+      {
+        "id": "white",
+        "label": "White"
+      },
+      {
+        "id": "black",
+        "label": "Black"
+      },
+      {
+        "id": "orange",
+        "label": "Orange"
+      },
+      {
+        "id": "teal",
+        "label": "Teal"
+      },
+      {
+        "id": "sage",
+        "label": "Sage"
+      },
+      {
+        "id": "navy",
+        "label": "Navy"
+      },
+      {
+        "id": "wood",
+        "label": "Wood"
+      }
+    ],
+    "floors": [
+      {
+        "id": "wood-honey",
+        "label": "Honey wood"
+      },
+      {
+        "id": "wood-light",
+        "label": "Light oak"
+      },
+      {
+        "id": "wood-dark",
+        "label": "Dark walnut"
+      },
+      {
+        "id": "carpet-grey",
+        "label": "Grey carpet"
+      },
+      {
+        "id": "carpet-blue",
+        "label": "Blue carpet"
+      },
+      {
+        "id": "carpet-green",
+        "label": "Green carpet"
+      },
+      {
+        "id": "concrete",
+        "label": "Concrete"
+      },
+      {
+        "id": "tile-blue",
+        "label": "Blue tile"
+      },
+      {
+        "id": "checker-cream",
+        "label": "Cream checker"
+      },
+      {
+        "id": "checker-bw",
+        "label": "Black & white"
+      },
+      {
+        "id": "marble",
+        "label": "Marble"
+      }
+    ],
+    "accessories": [
+      {
+        "id": "plants",
+        "label": "Plants"
+      },
+      {
+        "id": "bookshelves",
+        "label": "Bookshelves"
+      },
+      {
+        "id": "whiteboards",
+        "label": "Whiteboards & kanban"
+      },
+      {
+        "id": "serverRacks",
+        "label": "Server racks"
+      },
+      {
+        "id": "pingPong",
+        "label": "Ping-pong table"
+      },
+      {
+        "id": "arcade",
+        "label": "Arcade cabinet"
+      },
+      {
+        "id": "neon",
+        "label": "Neon sign"
+      },
+      {
+        "id": "clock",
+        "label": "Wall clock"
+      },
+      {
+        "id": "windows",
+        "label": "Windows & skyline"
+      },
+      {
+        "id": "coffeeMachine",
+        "label": "Coffee machine"
+      },
+      {
+        "id": "beanBags",
+        "label": "Bean bags"
+      },
+      {
+        "id": "rugs",
+        "label": "Rugs"
+      },
+      {
+        "id": "artwork",
+        "label": "Wall art"
+      },
+      {
+        "id": "meetingTv",
+        "label": "Meeting-room TV"
+      },
+      {
+        "id": "collabTable",
+        "label": "Collab table"
+      },
+      {
+        "id": "printer",
+        "label": "Printer & cabinets"
+      },
+      {
+        "id": "deskItems",
+        "label": "Desk clutter (mugs, notes)"
+      },
+      {
+        "id": "deskLamps",
+        "label": "Desk lamps"
+      }
+    ],
+    "monitors": [
+      {
+        "id": 1,
+        "label": "1 monitor"
+      },
+      {
+        "id": 2,
+        "label": "2 monitors"
+      }
+    ],
+    "plantStyle": [
+      {
+        "id": "mixed",
+        "label": "Mixed"
+      },
+      {
+        "id": "leafy",
+        "label": "Leafy"
+      },
+      {
+        "id": "snake",
+        "label": "Snake plant"
+      },
+      {
+        "id": "cactus",
+        "label": "Cactus"
+      },
+      {
+        "id": "palm",
+        "label": "Palm"
+      }
+    ],
+    "rugColor": [
+      {
+        "id": "sunset",
+        "label": "Sunset"
+      },
+      {
+        "id": "mono",
+        "label": "Mono"
+      },
+      {
+        "id": "navy",
+        "label": "Navy"
+      },
+      {
+        "id": "forest",
+        "label": "Forest"
+      },
+      {
+        "id": "berry",
+        "label": "Berry"
+      },
+      {
+        "id": "sand",
+        "label": "Sand"
+      }
+    ],
+    "sofaColor": [
+      {
+        "id": "charcoal",
+        "label": "Charcoal"
+      },
+      {
+        "id": "cream",
+        "label": "Cream"
+      },
+      {
+        "id": "teal",
+        "label": "Teal"
+      },
+      {
+        "id": "mustard",
+        "label": "Mustard"
+      },
+      {
+        "id": "burgundy",
+        "label": "Burgundy"
+      },
+      {
+        "id": "olive",
+        "label": "Olive"
+      }
+    ]
+  },
+  "presets": [
+    {
+      "id": "orbit-classic",
+      "label": "Orbit Classic",
+      "settings": {}
+    },
+    {
+      "id": "warm-studio",
+      "label": "Warm Studio",
+      "settings": {
+        "lighting": "auto",
+        "walls": {
+          "work": "warm-white",
+          "meeting": "wood-panel",
+          "lounge": "terracotta"
+        },
+        "accent": "wood",
+        "floors": {
+          "work": "wood-light",
+          "meeting": "carpet-green",
+          "lounge": "wood-dark",
+          "kitchen": "marble"
+        },
+        "plantStyle": "leafy",
+        "rugColor": "sand",
+        "sofaColor": "mustard",
+        "accessories": {
+          "deskLamps": true
+        }
+      }
+    },
+    {
+      "id": "night-mode",
+      "label": "Night Mode",
+      "settings": {
+        "lighting": "night",
+        "walls": {
+          "work": "navy",
+          "meeting": "black",
+          "lounge": "navy"
+        },
+        "accent": "teal",
+        "floors": {
+          "work": "wood-dark",
+          "meeting": "carpet-blue",
+          "lounge": "concrete",
+          "kitchen": "checker-bw"
+        },
+        "plantStyle": "snake",
+        "rugColor": "navy",
+        "sofaColor": "teal",
+        "monitors": 2,
+        "accessories": {
+          "deskLamps": true
+        }
+      }
+    },
+    {
+      "id": "garden",
+      "label": "Garden",
+      "settings": {
+        "lighting": "day",
+        "walls": {
+          "work": "sage",
+          "meeting": "sage",
+          "lounge": "brick"
+        },
+        "accent": "white",
+        "floors": {
+          "work": "wood-light",
+          "meeting": "carpet-green",
+          "lounge": "tile-blue",
+          "kitchen": "checker-cream"
+        },
+        "plantStyle": "palm",
+        "rugColor": "forest",
+        "sofaColor": "olive"
+      }
+    },
+    {
+      "id": "monochrome",
+      "label": "Monochrome",
+      "settings": {
+        "lighting": "day",
+        "walls": {
+          "work": "black",
+          "meeting": "warm-white",
+          "lounge": "black"
+        },
+        "accent": "white",
+        "floors": {
+          "work": "concrete",
+          "meeting": "carpet-grey",
+          "lounge": "checker-bw",
+          "kitchen": "marble"
+        },
+        "plantStyle": "snake",
+        "rugColor": "mono",
+        "sofaColor": "charcoal",
+        "monitors": 2
+      }
+    }
+  ]
+}

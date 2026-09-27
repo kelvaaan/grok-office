@@ -1,4 +1,6 @@
 // Office map, furniture and all environment pixel art (original, drawn in code).
+// Everything customizable (walls, floors, accessories, branding) is driven by the
+// settings object passed to applySettings(); call buildBackground() afterwards.
 import { drawText, textWidth } from './font.js';
 
 export const T = 16;
@@ -27,6 +29,23 @@ function cached(key, w, h, draw) {
 }
 
 // ---------------------------------------------------------------------------
+// Settings (see office-config.json for the full schema and defaults)
+export const FALLBACK_SETTINGS = {
+  name: 'Orbit Group', sign: 'logo', preset: 'orbit-classic', lighting: 'auto',
+  walls: { work: 'charcoal', meeting: 'charcoal', lounge: 'charcoal' }, accent: 'none',
+  floors: { work: 'wood-honey', meeting: 'carpet-grey', lounge: 'tile-blue', kitchen: 'checker-cream' },
+  accessories: {
+    plants: true, bookshelves: true, whiteboards: true, serverRacks: true, pingPong: true, arcade: true, neon: true,
+    clock: true, windows: true, coffeeMachine: true, beanBags: true, rugs: true, artwork: true, meetingTv: true,
+    collabTable: true, printer: true, deskItems: true, deskLamps: false,
+  },
+  monitors: 1, plantStyle: 'mixed', rugColor: 'sunset', sofaColor: 'charcoal',
+};
+let S = FALLBACK_SETTINGS;
+export const settings = () => S;
+const on = (item) => S.accessories[item] !== false;
+
+// ---------------------------------------------------------------------------
 // Map layout
 // Floor codes: X solid wall top, F wall face, w wood, c carpet, b lounge tile, k kitchen tile
 export const floor = [];
@@ -47,6 +66,7 @@ for (let y = 0; y < ROWS; y++) {
   floor.push(row);
 }
 export const isFloor = (x, y) => x >= 0 && y >= 0 && x < COLS && y < ROWS && 'wcbk'.includes(floor[y][x]);
+const ROOM_OF = { w: 'work', c: 'meeting', b: 'lounge', k: 'kitchen' };
 
 // Zones (for idle wandering)
 export const ZONES = {
@@ -57,77 +77,165 @@ export const ZONES = {
 };
 
 // ---------------------------------------------------------------------------
-// Furniture registry
+// Furniture registry (rebuilt by applySettings; arrays keep their identity)
 export const furniture = []; // {x,y,w,h,block,sortY,draw(ctx,now,world)}
 export const seats = []; // {x,y,facing,offY,kind,desk?}
 export const spots = []; // standing idle spots {x,y,facing,label}
 export const desks = []; // {index,x,y,chair:{x,y}}
-const wallDecor = []; // drawn right after the background: {draw(ctx,now,world)}
+export const lights = []; // night-time light sources {x,y,r,color,a}
+const wallDecor = []; // drawn right after the background: {static(ctx)} or {draw(ctx,now,world)}
 
 function add(item) { furniture.push(item); return item; }
 
 // ---------------------------------------------------------------------------
-// Floors & walls (static background)
-function drawFloorTile(ctx, x, y, f) {
-  const X = x * T, Y = y * T;
-  if (f === 'w') {
-    const tones = ['#a4733f', '#9c6c3a', '#a97a47', '#a06f3c'];
+// Floors
+const WOODS = {
+  'wood-honey': { tones: ['#a4733f', '#9c6c3a', '#a97a47', '#a06f3c'], line: '#8a5c30', seam: '#7d5330', speck: '#93633a' },
+  'wood-light': { tones: ['#d3ae7c', '#cca574', '#d8b584', '#cfa978'], line: '#b8905f', seam: '#aa8252', speck: '#c29a6a' },
+  'wood-dark': { tones: ['#5f3e27', '#593a24', '#65432b', '#5c3c25'], line: '#482d1b', seam: '#3c2516', speck: '#523520' },
+};
+const CARPETS = {
+  'carpet-grey': ['#474b59', '#51566a'],
+  'carpet-blue': ['#2e4877', '#3a5790'],
+  'carpet-green': ['#35604a', '#417459'],
+};
+export function drawFloorStyle(ctx, X, Y, tx, ty, style) {
+  if (WOODS[style]) {
+    const p = WOODS[style];
     for (let r = 0; r < 4; r++) {
-      const pr = y * 4 + r;
-      R(ctx, X, Y + r * 4, T, 4, tones[pr % 4]);
-      R(ctx, X, Y + r * 4, T, 1, '#8a5c30');
+      const pr = ty * 4 + r;
+      R(ctx, X, Y + r * 4, T, 4, p.tones[pr % 4]);
+      R(ctx, X, Y + r * 4, T, 1, p.line);
       for (let i = 0; i < T; i++) {
-        const wx = X + i;
-        if ((wx + pr * 11) % 28 === 0) R(ctx, wx, Y + r * 4, 1, 4, '#7d5330');
-        else if (hash2(wx, Y + r * 4 + 2) > 0.93) R(ctx, wx, Y + r * 4 + 2, 1, 1, '#93633a');
+        const wx = tx * T + i;
+        if ((wx + pr * 11) % 28 === 0) R(ctx, X + i, Y + r * 4, 1, 4, p.seam);
+        else if (hash2(wx, ty * T + r * 4 + 2) > 0.93) R(ctx, X + i, Y + r * 4 + 2, 1, 1, p.speck);
       }
     }
-  } else if (f === 'c') {
-    R(ctx, X, Y, T, T, '#474b59');
-    for (let i = 0; i < T; i += 4) for (let j = 0; j < T; j += 4) {
-      R(ctx, X + i + ((j / 4) % 2) * 2, Y + j, 1, 1, '#51566a');
-    }
-  } else if (f === 'b') {
+  } else if (CARPETS[style]) {
+    const [base, dot] = CARPETS[style];
+    R(ctx, X, Y, T, T, base);
+    for (let i = 0; i < T; i += 4) for (let j = 0; j < T; j += 4) R(ctx, X + i + ((j / 4) % 2) * 2, Y + j, 1, 1, dot);
+  } else if (style === 'tile-blue') {
     R(ctx, X, Y, T, T, '#3d6891');
     R(ctx, X, Y, T, 1, '#34597c');
     R(ctx, X, Y, 1, T, '#34597c');
     R(ctx, X + 1, Y + 1, T - 2, 1, '#4675a0');
     R(ctx, X + 1, Y + 1, 1, T - 2, '#4675a0');
-    if (hash2(x, y) > 0.7) R(ctx, X + 5 + ((x * 3) % 6), Y + 6 + ((y * 5) % 6), 2, 1, '#42709a');
-  } else if (f === 'k') {
-    for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
-      R(ctx, X + i * 8, Y + j * 8, 8, 8, (i + j) % 2 ? '#d9d1bf' : '#ebe5d6');
+    if (hash2(tx, ty) > 0.7) R(ctx, X + 5 + ((tx * 3) % 6), Y + 6 + ((ty * 5) % 6), 2, 1, '#42709a');
+  } else if (style === 'checker-cream' || style === 'checker-bw') {
+    const [a, b, grout] = style === 'checker-bw' ? ['#e6e6e2', '#232428', null] : ['#ebe5d6', '#d9d1bf', '#c9c0ac'];
+    for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) R(ctx, X + i * 8, Y + j * 8, 8, 8, (i + j) % 2 ? b : a);
+    if (grout) { R(ctx, X, Y, T, 1, grout); R(ctx, X, Y, 1, T, grout); }
+  } else if (style === 'concrete') {
+    R(ctx, X, Y, T, T, '#8a8c90');
+    for (let i = 0; i < T; i++) for (let j = 0; j < T; j++) {
+      const h = hash2(tx * T + i, ty * T + j);
+      if (h > 0.94) R(ctx, X + i, Y + j, 1, 1, '#7c7e83');
+      else if (h < 0.04) R(ctx, X + i, Y + j, 1, 1, '#999ba0');
     }
-    R(ctx, X, Y, T, 1, '#c9c0ac');
-    R(ctx, X, Y, 1, T, '#c9c0ac');
+    if (tx % 3 === 0) R(ctx, X, Y, 1, T, '#76787d');
+    if (ty % 3 === 0) R(ctx, X, Y, T, 1, '#76787d');
+  } else if (style === 'marble') {
+    R(ctx, X, Y, T, T, '#e7e5e0');
+    for (let i = 0; i < T; i++) for (let j = 0; j < T; j++) {
+      const gx = tx * T + i, gy = ty * T + j;
+      const v = (gx + gy * 0.55 + Math.sin(gy * 0.35 + gx * 0.05) * 3) % 37;
+      if (v < 0.9) R(ctx, X + i, Y + j, 1, 1, '#bdb8af');
+      else if (v > 18 && v < 18.6 && hash2(gx, gy) > 0.4) R(ctx, X + i, Y + j, 1, 1, '#d2cec6');
+    }
+    R(ctx, X, Y, T, 1, '#d6d3cc'); R(ctx, X, Y, 1, T, '#d6d3cc');
+  } else {
+    R(ctx, X, Y, T, T, '#555');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Walls
+const WALLS = {
+  charcoal: { edge: '#3c404d', face: '#2b2e39', hi: '#343845', groove: '#272a34', lower: '#282b35', trim: '#454a58', base: '#1c1e25', pattern: 'panel' },
+  black: { edge: '#2c2d33', face: '#141418', hi: '#1c1c21', groove: '#101013', lower: '#111114', trim: '#393a41', base: '#08080a', pattern: 'panel' },
+  'warm-white': { edge: '#b3a996', face: '#e6dfd1', hi: '#efe9de', groove: '#dcd4c4', lower: '#ddd5c5', trim: '#f6f2e9', base: '#a99c85', pattern: 'panel' },
+  navy: { edge: '#34436a', face: '#1f2b48', hi: '#283659', groove: '#1a2440', lower: '#1c2743', trim: '#3f4f79', base: '#121a2d', pattern: 'panel' },
+  sage: { edge: '#63775e', face: '#8ca385', hi: '#98ae91', groove: '#83997c', lower: '#7d9377', trim: '#b5c7ae', base: '#4f5f49', pattern: 'panel' },
+  brick: { edge: '#5c3226', face: '#9a4a36', hi: '#ab5741', groove: '#c8b5a2', lower: '#8a4230', trim: '#d6c6b5', base: '#40241c', pattern: 'brick' },
+  'wood-panel': { edge: '#5c3d22', face: '#8a5e3a', hi: '#9a6b44', groove: '#6c472a', lower: '#7a5232', trim: '#b08256', base: '#35230f', pattern: 'planks' },
+  terracotta: { edge: '#7c4230', face: '#c06a4b', hi: '#cc7858', groove: '#b36146', lower: '#ad5d41', trim: '#e0a58a', base: '#5a2e20', pattern: 'panel' },
+};
+const ACCENTS = { white: '#eeebe4', black: '#151519', orange: '#df7438', teal: '#2c8c87', sage: '#7c9875', navy: '#24325b', wood: '#7a5232' };
+export function wallStyle(id) { return WALLS[id] || WALLS.charcoal; }
+
+// Draw a wall face segment. top = y of the edge line, h = face height incl. trim/base.
+function drawWallFace(ctx, X, top, w, h, styleId, accentId, tx) {
+  const s = wallStyle(styleId);
+  const faceTop = top + 1, trimY = top + h - 4, faceH = trimY - faceTop;
+  const lowerY = faceTop + Math.round(faceH * 0.6);
+  R(ctx, X, top, w, 1, s.edge);
+  R(ctx, X, faceTop, w, faceH, s.face);
+  if (s.pattern === 'brick') {
+    for (let y = faceTop; y < trimY; y += 4) {
+      const row = (y - faceTop) / 4;
+      R(ctx, X, y, w, 1, s.groove);
+      for (let x = 0; x < w; x++) {
+        const gx = tx * T + x;
+        if ((gx + (row % 2) * 4) % 8 === 0) R(ctx, X + x, y, 1, 4, s.groove);
+        else if (hash2(gx, y) > 0.9) R(ctx, X + x, y + 2, 1, 1, s.hi);
+      }
+    }
+  } else if (s.pattern === 'planks') {
+    for (let x = 0; x < w; x++) {
+      const gx = tx * T + x;
+      if (gx % 6 === 0) R(ctx, X + x, faceTop, 1, faceH, s.groove);
+      else if (gx % 12 < 6) R(ctx, X + x, faceTop, 1, faceH, s.hi);
+    }
+  } else {
+    R(ctx, X, faceTop, w, 1, s.hi);
+    if (tx % 2 === 0) R(ctx, X, faceTop + 1, 1, faceH - 1, s.groove);
+  }
+  const acc = ACCENTS[accentId];
+  if (acc) {
+    R(ctx, X, lowerY - 1, w, 1, shadeHex(acc, 0.25));
+    R(ctx, X, lowerY, w, trimY - lowerY, acc);
+    if (tx % 2 === 0) R(ctx, X, lowerY, 1, trimY - lowerY, shadeHex(acc, -0.12));
+  } else if (s.pattern === 'panel') {
+    R(ctx, X, lowerY - 1, w, 1, s.hi);
+    R(ctx, X, lowerY, w, trimY - lowerY, s.lower);
+  }
+  R(ctx, X, trimY, w, 1, s.trim);
+  R(ctx, X, trimY + 1, w, 3, s.base);
+}
+export function drawWallSwatch(ctx, styleId, accentId, w, h) {
+  R(ctx, 0, 0, w, 4, '#16171c');
+  for (let x = 0; x < w; x += T) drawWallFace(ctx, x, 4, Math.min(T, w - x), h - 4, styleId, accentId, x / T);
+}
+export function drawFloorSwatch(ctx, styleId, w, h) {
+  for (let y = 0; y < h; y += T) for (let x = 0; x < w; x += T) drawFloorStyle(ctx, x, y, 3 + x / T, 5 + y / T, styleId);
+}
+export const ACCENT_COLORS = ACCENTS;
+
+function wallRoomAt(x) { return x < 23 ? 'work' : 'meeting'; }
+
+function drawFloors(ctx) {
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+    const f = floor[y][x];
+    if (!ROOM_OF[f]) continue;
+    // door thresholds belong to the room they open from
+    drawFloorStyle(ctx, x * T, y * T, x, y, S.floors[ROOM_OF[f]]);
   }
 }
 
 function drawWalls(ctx) {
-  // Top wall face (rows 0-2)
+  // Top wall face (rows 0-2): wall top band + face
   for (let x = 0; x < COLS; x++) {
     const X = x * T;
     if (floor[1][x] !== 'F') continue;
     R(ctx, X, 0, T, 7, '#16171c');
-    R(ctx, X, 7, T, 1, '#3c404d');
-    R(ctx, X, 8, T, 36, '#2b2e39');
-    // subtle panelling
-    R(ctx, X, 8, T, 1, '#343845');
-    if (x % 2 === 0) R(ctx, X, 9, 1, 35, '#272a34');
-    R(ctx, X, 29, T, 1, '#343845');
-    R(ctx, X, 30, T, 14, '#282b35');
-    R(ctx, X, 44, T, 1, '#454a58');
-    R(ctx, X, 45, T, 3, '#1c1e25');
+    drawWallFace(ctx, X, 7, T, 41, S.walls[wallRoomAt(x)], S.accent, x);
   }
   // Lounge partition face (row 11)
   for (let x = 24; x < COLS - 1; x++) {
     if (floor[11][x] !== 'F') continue;
-    const X = x * T, Y = 11 * T;
-    R(ctx, X, Y, T, 1, '#3c404d');
-    R(ctx, X, Y + 1, T, 11, '#2b2e39');
-    if (x % 2 === 0) R(ctx, X, Y + 1, 1, 11, '#272a34');
-    R(ctx, X, Y + 12, T, 1, '#454a58');
-    R(ctx, X, Y + 13, T, 3, '#1c1e25');
+    drawWallFace(ctx, x * T, 11 * T, T, 16, S.walls.lounge, S.accent, x);
   }
   // Solid wall tops
   for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
@@ -135,7 +243,6 @@ function drawWalls(ctx) {
     const X = x * T, Y = y * T;
     R(ctx, X, Y, T, T, '#1a1b21');
     R(ctx, X + 2, Y + 2, T - 4, T - 4, '#202229');
-    // lighter edges where the wall meets floor
     if (isFloor(x - 1, y)) R(ctx, X, Y, 1, T, '#3a3d49');
     if (isFloor(x + 1, y)) R(ctx, X + T - 1, Y, 1, T, '#3a3d49');
     if (isFloor(x, y + 1) || (y + 1 < ROWS && floor[y + 1][x] === 'F')) R(ctx, X, Y + T - 1, T, 1, '#3a3d49');
@@ -145,13 +252,23 @@ function drawWalls(ctx) {
   for (const [x, y] of [[23, 7], [23, 16]]) { R(ctx, x * T, y * T, T, 1, '#1a1b21'); R(ctx, x * T, (y + 2) * T - 1, T, 1, '#6b4a2c'); }
 }
 
+// ---------------------------------------------------------------------------
+// Rugs
+const RUGS = {
+  sunset: ['#c9773a', '#e3a65c', '#8f4f25'],
+  mono: ['#1d1d22', '#ededea', '#0b0b0e'],
+  navy: ['#2b3f6e', '#6b86c4', '#1b2847'],
+  forest: ['#3d6b45', '#7fb07a', '#274a2e'],
+  berry: ['#8a3b5c', '#cf7598', '#5c2440'],
+  sand: ['#c9ad80', '#ecdcb9', '#96805c'],
+};
+export const RUG_COLORS = RUGS;
 function drawRugs(ctx) {
-  // Lounge rug
-  rug(ctx, 25 * T + 4, 13 * T + 2, 7 * T - 8, 7 * T - 4, '#c9773a', '#e3a65c', '#8f4f25');
-  // Collab rug
-  rug(ctx, 9 * T + 6, 14 * T + 10, 6 * T - 12, 5 * T - 4, '#40475a', '#5d6784', '#2c3140');
-  // Meeting rug under table
-  rug(ctx, 27 * T + 8, 3 * T + 10, 8 * T - 16, 6 * T - 4, '#3a3f4f', '#4f566b', '#2b2f3b');
+  if (!on('rugs')) return;
+  const [b, l, d] = RUGS[S.rugColor] || RUGS.sunset;
+  rug(ctx, 25 * T + 4, 13 * T + 2, 7 * T - 8, 7 * T - 4, b, l, d); // lounge
+  if (on('collabTable')) rug(ctx, 9 * T + 6, 14 * T + 10, 6 * T - 12, 5 * T - 4, '#40475a', '#5d6784', '#2c3140'); // collab
+  rug(ctx, 27 * T + 8, 3 * T + 10, 8 * T - 16, 6 * T - 4, '#3a3f4f', '#4f566b', '#2b2f3b'); // meeting
 }
 function rug(ctx, x, y, w, h, base, light, dark) {
   R(ctx, x + 1, y, w - 2, h, dark);
@@ -161,9 +278,7 @@ function rug(ctx, x, y, w, h, base, light, dark) {
   R(ctx, x + 4, y + h - 5, w - 8, 1, light);
   R(ctx, x + 4, y + 4, 1, h - 8, light);
   R(ctx, x + w - 5, y + 4, 1, h - 8, light);
-  for (let i = x + 8; i < x + w - 8; i += 6) {
-    R(ctx, i, y + h / 2 - 1, 2, 2, light);
-  }
+  for (let i = x + 8; i < x + w - 8; i += 6) R(ctx, i, y + h / 2 - 1, 2, 2, light);
 }
 
 export function buildBackground() {
@@ -171,10 +286,7 @@ export function buildBackground() {
   c.width = W; c.height = H;
   const ctx = c.getContext('2d');
   R(ctx, 0, 0, W, H, '#101116');
-  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
-    const f = floor[y][x];
-    if ('wcbk'.includes(f)) drawFloorTile(ctx, x, y, f);
-  }
+  drawFloors(ctx);
   drawRugs(ctx);
   drawWalls(ctx);
   for (const d of wallDecor) if (d.static) d.static(ctx);
@@ -184,6 +296,159 @@ export function buildBackground() {
 export function drawWallDecor(ctx, now, world) {
   for (const d of wallDecor) if (d.draw) d.draw(ctx, now, world);
 }
+
+// ---------------------------------------------------------------------------
+// Orbit Group brand mark, drawn as pixel art (ring + inner orbit stroke + wordmark)
+const LOGO_GLYPHS = {
+  // 7-row cap height; lowercase x-height rows 2..6; descender rows 7..8
+  O: ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+  G: ['.###.', '#...#', '#....', '#.###', '#...#', '#...#', '.###.'],
+  r: ['....', '....', '#.##', '##..', '#...', '#...', '#...'],
+  b: ['#...', '#...', '###.', '#..#', '#..#', '#..#', '###.'],
+  i: ['#', '.', '#', '#', '#', '#', '#'],
+  t: ['.#.', '.#.', '###', '.#.', '.#.', '.#.', '..#'],
+  o: ['....', '....', '.##.', '#..#', '#..#', '#..#', '.##.'],
+  u: ['....', '....', '#..#', '#..#', '#..#', '#..#', '.###'],
+  p: ['....', '....', '###.', '#..#', '#..#', '#..#', '###.', '#...', '#...'],
+};
+function drawLogoWord(ctx, word, x, y, color) {
+  let cx = x;
+  ctx.fillStyle = color;
+  for (const ch of word) {
+    const g = LOGO_GLYPHS[ch];
+    if (!g) { cx += 3; continue; }
+    g.forEach((row, r) => { for (let c = 0; c < row.length; c++) if (row[c] === '#') ctx.fillRect(cx + c, y + r, 1, 1); });
+    cx += g[0].length + 1;
+  }
+  return cx - x - 1;
+}
+// Ring of diameter d with the inner "orbit" stroke curving through the lower right.
+// Small sizes use hand-drawn bitmaps; larger ones are rasterised from the geometry
+// fitted to the logo (arc centre offset up-left of the ring centre).
+const MARK_BITMAPS = {
+  7: ['..###..', '.#...#.', '#.....#', '#...#.#', '#..##.#', '.#...#.', '..###..'],
+  9: ['..#####..', '.#.....#.', '#.......#', '#.....#.#', '#.....#.#', '#...##..#', '#.......#', '.#.....#.', '..#####..'],
+  18: [
+    '......######......',
+    '....##########....',
+    '...###......###...',
+    '..###........###..',
+    '.###..........###.',
+    '.##............##.',
+    '##..........##..##',
+    '##..........##..##',
+    '##..........##..##',
+    '##.........##...##',
+    '##........###...##',
+    '##.....#####....##',
+    '.##....####....##.',
+    '.###..........###.',
+    '..###........###..',
+    '...###......###...',
+    '....##########....',
+    '......######......',
+  ],
+};
+export function drawOrbitMark(ctx, x, y, d, color) {
+  ctx.fillStyle = color;
+  const bmp = MARK_BITMAPS[d];
+  if (bmp) {
+    bmp.forEach((row, r) => { for (let c = 0; c < row.length; c++) if (row[c] === '#') ctx.fillRect(x + c, y + r, 1, 1); });
+    return;
+  }
+  const r = d / 2;
+  const stroke = Math.max(1, Math.round(d / 9));
+  const inner = r - stroke;
+  const arcR = inner * 0.68, arcW = Math.max(1, stroke * 0.95);
+  const ox = -d / 30, oy = -d / 10; // arc centre offset
+  for (let py = 0; py < d; py++) for (let px = 0; px < d; px++) {
+    const dx = px + 0.5 - r, dy = py + 0.5 - r;
+    const dist = Math.hypot(dx, dy);
+    let hit = dist <= r && dist >= inner;
+    if (!hit) {
+      const ax = dx - ox, ay = dy - oy;
+      const ang = Math.atan2(ay, ax) * 180 / Math.PI; // 0 = right, 90 = down
+      if (ang >= -2 && ang <= 92 && Math.abs(Math.hypot(ax, ay) - arcR) <= arcW / 2 + 0.4) hit = true;
+    }
+    if (hit) ctx.fillRect(x + px, y + py, 1, 1);
+  }
+}
+// Full sign: returns width/height. Plate is 53 x 24 native pixels.
+export const LOGO_SIGN = { w: 53, h: 24 };
+export function drawOrbitLogoSign(ctx, x, y) {
+  const { w, h } = LOGO_SIGN;
+  R(ctx, x - 1, y + h, w + 2, 1, 'rgba(0,0,0,0.35)');
+  R(ctx, x, y, w, h, '#0b0b0e');
+  R(ctx, x, y, w, 1, '#34363f');
+  const ink = '#f2f2f2';
+  drawOrbitMark(ctx, x + 3, y + 3, 18, ink);
+  drawLogoWord(ctx, 'Orbit', x + 25, y + 3, ink);
+  drawLogoWord(ctx, 'Group', x + 25, y + 12, ink);
+}
+
+// Plain text sign (office name in the 3x5 pixel font, 2x when it fits)
+function drawTextSign(ctx, name, centerX, y, maxW) {
+  const label = name.toUpperCase();
+  let scale = textWidth(label) * 2 + 12 <= maxW ? 2 : 1;
+  let lines = [label];
+  if (scale === 1 && textWidth(label) + 12 > maxW) {
+    const mid = label.length / 2;
+    let cut = -1;
+    for (let i = 0; i < label.length; i++) if (label[i] === ' ' && (cut < 0 || Math.abs(i - mid) < Math.abs(cut - mid))) cut = i;
+    lines = cut > 0 ? [label.slice(0, cut), label.slice(cut + 1)] : [label];
+    lines = lines.map((l) => { let s = l; while (textWidth(s) + 12 > maxW && s.length > 1) s = s.slice(0, -1); return s; });
+  }
+  const tw = Math.max(...lines.map(textWidth)) * scale;
+  const lh = 5 * scale;
+  const w = tw + 12, h = lines.length * lh + (lines.length - 1) * 2 + 8;
+  const x = Math.round(centerX - w / 2);
+  R(ctx, x - 1, y + h, w + 2, 1, 'rgba(0,0,0,0.35)');
+  R(ctx, x, y, w, h, '#0b0b0e');
+  R(ctx, x, y, w, 1, '#34363f');
+  const tmp = document.createElement('canvas');
+  tmp.width = tw / scale + 1; tmp.height = 5 * lines.length + 2 * (lines.length - 1);
+  const tg = tmp.getContext('2d');
+  lines.forEach((l, i) => drawText(tg, l, Math.round((tw / scale - textWidth(l)) / 2), i * 7 / (scale === 2 ? 1 : 1), '#f2f2f2'));
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(tmp, x + 6, y + 4, tmp.width * scale, tmp.height * scale);
+  R(ctx, x + 2, y + 2, 1, 1, '#555a66'); R(ctx, x + w - 3, y + 2, 1, 1, '#555a66');
+  R(ctx, x + 2, y + h - 3, 1, 1, '#555a66'); R(ctx, x + w - 3, y + h - 3, 1, 1, '#555a66');
+}
+// Ring mark + custom office name (logo mode with a name other than "Orbit Group")
+function drawMarkSign(ctx, name, centerX, y, maxW) {
+  const words = name.toUpperCase().trim().split(/\s+/);
+  let lines = [words.join(' ')];
+  if (words.length > 1) {
+    let best = null;
+    for (let i = 1; i < words.length; i++) {
+      const l = [words.slice(0, i).join(' '), words.slice(i).join(' ')];
+      const w = Math.max(...l.map(textWidth));
+      if (!best || w < best.w) best = { l, w };
+    }
+    lines = best.l;
+  }
+  const markW = 18, gap = 5, pad = 3;
+  let scale = 2;
+  const widest = () => Math.max(...lines.map(textWidth)) * scale;
+  if (markW + gap + widest() + pad * 2 > maxW) scale = 1;
+  while (markW + gap + widest() + pad * 2 > maxW) lines = lines.map((l) => (textWidth(l) * scale + markW + gap + pad * 2 > maxW ? l.slice(0, -1) : l));
+  const lg = scale === 2 ? 1 : 2; // line gap in font pixels (before scaling)
+  const rows = lines.length * 5 + (lines.length - 1) * lg;
+  const textH = rows * scale;
+  const w = markW + gap + widest() + pad * 2, h = Math.max(24, textH + 4);
+  const x = Math.round(centerX - w / 2);
+  R(ctx, x - 1, y + h, w + 2, 1, 'rgba(0,0,0,0.35)');
+  R(ctx, x, y, w, h, '#0b0b0e');
+  R(ctx, x, y, w, 1, '#34363f');
+  drawOrbitMark(ctx, x + pad, y + Math.round((h - 18) / 2), 18, '#f2f2f2');
+  const tmp = document.createElement('canvas');
+  tmp.width = Math.max(1, widest() / scale); tmp.height = rows;
+  const tg = tmp.getContext('2d');
+  lines.forEach((l, i) => drawText(tg, l, 0, i * (5 + lg), '#f2f2f2'));
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(tmp, x + pad + markW + gap, y + Math.round((h - textH) / 2), tmp.width * scale, tmp.height * scale);
+}
+const firstWord = (name) => (name || '').trim().split(/\s+/)[0].toUpperCase();
 
 // ---------------------------------------------------------------------------
 // Sky / time of day
@@ -262,172 +527,170 @@ function lerpColor(a, b, t) {
 }
 
 // ---------------------------------------------------------------------------
-// Wall decorations
-function windowDecor(col, width) {
-  wallDecor.push({ draw: (ctx, now, world) => drawWindow(ctx, col * T + 4, 12, width * T - 8, 24, world.phase, now) });
-}
-windowDecor(2, 3);
-windowDecor(18, 3);
-windowDecor(34, 3);
+// Wall decorations (registered per settings)
+function registerWallDecor() {
+  if (on('windows')) {
+    for (const col of [2, 18, 34]) wallDecor.push({ draw: (ctx, now, world) => drawWindow(ctx, col * T + 4, 12, 3 * T - 8, 24, world.phase, now) });
+  }
 
-// GROK HQ sign
-wallDecor.push({
-  static: (ctx) => {
-    const label = 'GROK HQ';
-    const tw = textWidth(label);
-    const w = tw + 18, h = 13;
-    const x = Math.round(11.5 * T - w / 2), y = 13;
-    R(ctx, x - 1, y + h, w + 2, 1, '#121318');
-    R(ctx, x, y, w, h, '#0b0b0e');
-    R(ctx, x, y, w, 1, '#3e414d');
-    R(ctx, x, y, 1, h, '#2a2c35');
-    R(ctx, x + w - 1, y, 1, h, '#2a2c35');
-    // mark: ring with a slash
-    const mx = x + 4, my = y + 3;
-    R(ctx, mx + 1, my, 5, 1, '#f2f2f2'); R(ctx, mx + 1, my + 6, 5, 1, '#f2f2f2');
-    R(ctx, mx, my + 1, 1, 5, '#f2f2f2'); R(ctx, mx + 6, my + 1, 1, 5, '#f2f2f2');
-    for (let i = 0; i < 7; i++) R(ctx, mx + 6 - i, my + i, 1, 1, '#f2f2f2');
-    drawText(ctx, label, x + 13, y + 4, '#f2f2f2');
-    // standoff screws
-    R(ctx, x + 2, y + 2, 1, 1, '#555a66'); R(ctx, x + w - 3, y + 2, 1, 1, '#555a66');
-    R(ctx, x + 2, y + h - 3, 1, 1, '#555a66'); R(ctx, x + w - 3, y + h - 3, 1, 1, '#555a66');
-  },
-});
-// small tagline under sign
-wallDecor.push({ static: (ctx) => { const s = 'UNDERSTAND THE UNIVERSE'; drawText(ctx, s, Math.round(11.5 * T - textWidth(s) / 2), 31, '#5d6272'); } });
+  // Brand sign centred on the work-room wall
+  wallDecor.push({
+    static: (ctx) => {
+      if (S.sign === 'logo' && S.name.trim().toLowerCase() === 'orbit group') drawOrbitLogoSign(ctx, Math.round(11.5 * T - LOGO_SIGN.w / 2), 9);
+      else if (S.sign === 'logo') drawMarkSign(ctx, S.name, 11.5 * T, 9, 110);
+      else drawTextSign(ctx, S.name, 11.5 * T, 11, 110);
+    },
+  });
 
-// Clock (real local time)
-wallDecor.push({
-  draw: (ctx, now, world) => {
-    const cx = 15 * T + 8, cy = 20;
-    const d = world.date;
-    R(ctx, cx - 5, cy - 7, 11, 15, '#15161b');
-    R(ctx, cx - 6, cy - 6, 13, 13, '#15161b');
-    R(ctx, cx - 4, cy - 6, 9, 13, '#e9e6dc');
-    R(ctx, cx - 5, cy - 5, 11, 11, '#e9e6dc');
-    R(ctx, cx - 6, cy - 4, 1, 9, '#15161b');
-    R(ctx, cx, cy - 5, 1, 1, '#777'); R(ctx, cx, cy + 5, 1, 1, '#777'); R(ctx, cx - 5, cy, 1, 1, '#777'); R(ctx, cx + 5, cy, 1, 1, '#777');
-    const hand = (ang, len, col) => {
-      for (let i = 1; i <= len; i++) R(ctx, Math.round(cx + Math.sin(ang) * i), Math.round(cy - Math.cos(ang) * i), 1, 1, col);
-    };
-    const hr = (d.getHours() % 12 + d.getMinutes() / 60) / 12 * Math.PI * 2;
-    const mn = d.getMinutes() / 60 * Math.PI * 2;
-    hand(mn, 4, '#2a2a33');
-    hand(hr, 3, '#2a2a33');
-    hand(d.getSeconds() / 60 * Math.PI * 2, 4, '#d23c3c');
-    R(ctx, cx, cy, 1, 1, '#2a2a33');
-  },
-});
+  if (on('clock')) wallDecor.push({
+    draw: (ctx, now, world) => {
+      const cx = 15 * T + 8, cy = 20;
+      const d = world.date;
+      R(ctx, cx - 5, cy - 7, 11, 15, '#15161b');
+      R(ctx, cx - 6, cy - 6, 13, 13, '#15161b');
+      R(ctx, cx - 4, cy - 6, 9, 13, '#e9e6dc');
+      R(ctx, cx - 5, cy - 5, 11, 11, '#e9e6dc');
+      R(ctx, cx - 6, cy - 4, 1, 9, '#15161b');
+      R(ctx, cx, cy - 5, 1, 1, '#777'); R(ctx, cx, cy + 5, 1, 1, '#777'); R(ctx, cx - 5, cy, 1, 1, '#777'); R(ctx, cx + 5, cy, 1, 1, '#777');
+      const hand = (ang, len, col) => {
+        for (let i = 1; i <= len; i++) R(ctx, Math.round(cx + Math.sin(ang) * i), Math.round(cy - Math.cos(ang) * i), 1, 1, col);
+      };
+      const hr = (d.getHours() % 12 + d.getMinutes() / 60) / 12 * Math.PI * 2;
+      const mn = d.getMinutes() / 60 * Math.PI * 2;
+      hand(mn, 4, '#2a2a33');
+      hand(hr, 3, '#2a2a33');
+      hand(d.getSeconds() / 60 * Math.PI * 2, 4, '#d23c3c');
+      R(ctx, cx, cy, 1, 1, '#2a2a33');
+    },
+  });
 
-// Meeting whiteboard (wall mounted)
-wallDecor.push({
-  static: (ctx) => {
-    const x = 24 * T + 10, y = 10, w = 50, h = 28;
-    R(ctx, x - 1, y - 1, w + 2, h + 2, '#8d93a3');
-    R(ctx, x, y, w, h, '#f4f5f7');
-    R(ctx, x, y + h - 1, w, 1, '#d9dce3');
-    // chart
-    R(ctx, x + 4, y + 4, 1, 14, '#5d6272'); R(ctx, x + 4, y + 18, 20, 1, '#5d6272');
-    const pts = [[6, 16], [9, 14], [12, 15], [15, 11], [18, 9], [21, 6]];
-    for (let i = 0; i < pts.length - 1; i++) {
-      const [x1, y1] = pts[i], [x2, y2] = pts[i + 1];
-      const steps = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1));
-      for (let s = 0; s <= steps; s++) R(ctx, x + Math.round(x1 + (x2 - x1) * s / steps), y + Math.round(y1 + (y2 - y1) * s / steps), 1, 1, '#1f9d55');
-    }
-    // sticky notes + boxes
-    R(ctx, x + 28, y + 4, 7, 6, '#ffd84d'); R(ctx, x + 37, y + 4, 7, 6, '#ff9db5'); R(ctx, x + 28, y + 12, 7, 6, '#8fd3ff');
-    R(ctx, x + 29, y + 6, 5, 1, '#b39320'); R(ctx, x + 38, y + 6, 4, 1, '#b3607a'); R(ctx, x + 29, y + 14, 5, 1, '#4a86ad');
-    R(ctx, x + 37, y + 13, 7, 1, '#d23c3c'); R(ctx, x + 40, y + 12, 1, 3, '#d23c3c');
-    drawText(ctx, 'Q4', x + 7, y + 21, '#2f5bd0');
-    R(ctx, x + 16, y + 23, 10, 1, '#5d6272');
-    // tray + markers
-    R(ctx, x + 4, y + h + 1, w - 8, 2, '#8d93a3');
-    R(ctx, x + 10, y + h, 4, 1, '#d23c3c'); R(ctx, x + 16, y + h, 4, 1, '#2f5bd0'); R(ctx, x + 22, y + h, 4, 1, '#1f9d55');
-  },
-});
-
-// Meeting TV (animated)
-wallDecor.push({
-  draw: (ctx, now) => {
-    const x = 29 * T + 4, y = 10, w = 56, h = 30;
-    R(ctx, x - 1, y - 1, w + 2, h + 2, '#050507');
-    R(ctx, x, y, w, h, '#0f1117');
-    const slide = Math.floor(now / 6000) % 3;
-    const sx = x + 3, sy = y + 3, sw = w - 6, sh = h - 6;
-    if (slide === 0) {
-      R(ctx, sx, sy, sw, sh, '#0b0c10');
-      const s = 'GROK';
-      drawText(ctx, s, sx + Math.round(sw / 2 - textWidth(s) / 2), sy + 6, '#ffffff');
-      R(ctx, sx + sw / 2 - 10, sy + 14, 20, 1, '#3c404d');
-      drawText(ctx, 'ALL HANDS', sx + Math.round(sw / 2 - textWidth('ALL HANDS') / 2), sy + 17, '#8a90a0');
-    } else if (slide === 1) {
-      R(ctx, sx, sy, sw, sh, '#10131b');
-      const bars = [6, 9, 7, 12, 10, 15, 13, 18];
-      bars.forEach((b, i) => {
-        const bh = Math.round(b * (0.85 + 0.15 * Math.sin(now / 700 + i)));
-        R(ctx, sx + 4 + i * 6, sy + sh - 2 - bh, 4, bh, i === bars.length - 1 ? '#45e27a' : '#4d7cff');
-      });
-      R(ctx, sx + 2, sy + sh - 2, sw - 4, 1, '#3c404d');
-    } else {
-      R(ctx, sx, sy, sw, sh, '#0c0f14');
-      for (let i = 0; i < 5; i++) {
-        const lw = 8 + Math.floor(hash2(i, Math.floor(now / 6000)) * 30);
-        R(ctx, sx + 3, sy + 3 + i * 4, lw, 2, i === 0 ? '#ffffff' : '#596175');
+  // Meeting whiteboard (wall mounted)
+  if (on('whiteboards')) wallDecor.push({
+    static: (ctx) => {
+      const x = 24 * T + 10, y = 10, w = 50, h = 28;
+      R(ctx, x - 1, y - 1, w + 2, h + 2, '#8d93a3');
+      R(ctx, x, y, w, h, '#f4f5f7');
+      R(ctx, x, y + h - 1, w, 1, '#d9dce3');
+      R(ctx, x + 4, y + 4, 1, 14, '#5d6272'); R(ctx, x + 4, y + 18, 20, 1, '#5d6272');
+      const pts = [[6, 16], [9, 14], [12, 15], [15, 11], [18, 9], [21, 6]];
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [x1, y1] = pts[i], [x2, y2] = pts[i + 1];
+        const steps = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1));
+        for (let s = 0; s <= steps; s++) R(ctx, x + Math.round(x1 + (x2 - x1) * s / steps), y + Math.round(y1 + (y2 - y1) * s / steps), 1, 1, '#1f9d55');
       }
-      drawText(ctx, '>_', sx + sw - 12, sy + sh - 7, Math.floor(now / 500) % 2 ? '#45e27a' : '#1c6b3a');
-    }
-    R(ctx, x + w / 2 - 1, y + h + 1, 2, 1, '#2a2c35');
-    R(ctx, x + w - 3, y + h - 2, 1, 1, '#45e27a');
-  },
-});
+      R(ctx, x + 28, y + 4, 7, 6, '#ffd84d'); R(ctx, x + 37, y + 4, 7, 6, '#ff9db5'); R(ctx, x + 28, y + 12, 7, 6, '#8fd3ff');
+      R(ctx, x + 29, y + 6, 5, 1, '#b39320'); R(ctx, x + 38, y + 6, 4, 1, '#b3607a'); R(ctx, x + 29, y + 14, 5, 1, '#4a86ad');
+      R(ctx, x + 37, y + 13, 7, 1, '#d23c3c'); R(ctx, x + 40, y + 12, 1, 3, '#d23c3c');
+      drawText(ctx, 'Q4', x + 7, y + 21, '#2f5bd0');
+      R(ctx, x + 16, y + 23, 10, 1, '#5d6272');
+      R(ctx, x + 4, y + h + 1, w - 8, 2, '#8d93a3');
+      R(ctx, x + 10, y + h, 4, 1, '#d23c3c'); R(ctx, x + 16, y + h, 4, 1, '#2f5bd0'); R(ctx, x + 22, y + h, 4, 1, '#1f9d55');
+    },
+  });
 
-// Lounge neon sign + painting
-wallDecor.push({
-  draw: (ctx, now) => {
-    const x = 28 * T, y = 11 * T + 1;
-    R(ctx, x, y, 44, 11, '#101116');
-    R(ctx, x, y, 44, 1, '#2c2f3a');
-    const flicker = Math.floor(now / 90) % 97 === 0;
-    const glow = flicker ? 'rgba(80,200,255,0.12)' : 'rgba(80,200,255,0.35)';
-    const core = flicker ? '#6a8ea0' : '#e6f7ff';
-    const s = 'GROK';
-    const tx = x + Math.round(22 - textWidth(s) / 2), ty = y + 3;
-    // glow pass
-    ctx.save();
-    ctx.globalAlpha = 1;
-    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) drawText(ctx, s, tx + dx, ty + dy, glow);
-    ctx.restore();
-    drawText(ctx, s, tx, ty, core);
-    R(ctx, x + 3, y + 9, 38, 1, flicker ? '#553344' : '#ff5fa2');
-  },
-});
-wallDecor.push({
-  static: (ctx) => {
-    // framed painting: ringed planet
-    const x = 31 * T + 6, y = 11 * T + 1, w = 20, h = 11;
-    R(ctx, x - 1, y - 1, w + 2, h + 2, '#b08a4a');
-    R(ctx, x, y, w, h, '#161a33');
-    R(ctx, x + 3, y + 2, 1, 1, '#ffffff'); R(ctx, x + 16, y + 7, 1, 1, '#ffffff'); R(ctx, x + 12, y + 1, 1, 1, '#aab4ff');
-    R(ctx, x + 8, y + 3, 5, 5, '#e08a4a'); R(ctx, x + 9, y + 3, 3, 1, '#f3b27a'); R(ctx, x + 7, y + 4, 1, 3, '#e08a4a'); R(ctx, x + 13, y + 4, 1, 3, '#b8642e');
-    R(ctx, x + 5, y + 5, 11, 1, '#e8d9b0');
-  },
-});
-// Kitchen upper cabinets
-wallDecor.push({
-  static: (ctx) => {
-    const x = 34 * T, y = 11 * T;
-    R(ctx, x, y, 4 * T, 10, '#3a3d47');
-    R(ctx, x, y + 10, 4 * T, 1, '#24262d');
-    for (let i = 0; i < 4; i++) {
-      R(ctx, x + i * T + 1, y + 1, T - 2, 8, '#454954');
-      R(ctx, x + i * T + (i % 2 ? 2 : T - 4), y + 4, 2, 2, '#b8bcc6');
-    }
-  },
-});
+  // Meeting TV (animated)
+  if (on('meetingTv')) wallDecor.push({
+    draw: (ctx, now) => {
+      const x = 29 * T + 4, y = 10, w = 56, h = 30;
+      R(ctx, x - 1, y - 1, w + 2, h + 2, '#050507');
+      R(ctx, x, y, w, h, '#0f1117');
+      const slide = Math.floor(now / 6000) % 3;
+      const sx = x + 3, sy = y + 3, sw = w - 6, sh = h - 6;
+      if (slide === 0) {
+        R(ctx, sx, sy, sw, sh, '#0b0c10');
+        let s = firstWord(S.name);
+        const markW = S.sign === 'logo' ? 11 : 0;
+        while (s.length > 1 && textWidth(s) + markW > sw - 6) s = s.slice(0, -1);
+        const total = textWidth(s) + markW;
+        const x0 = sx + Math.round(sw / 2 - total / 2);
+        if (markW) drawOrbitMark(ctx, x0, sy + 4, 9, '#ffffff');
+        drawText(ctx, s, x0 + markW, sy + 6, '#ffffff');
+        R(ctx, sx + sw / 2 - 10, sy + 15, 20, 1, '#3c404d');
+        drawText(ctx, 'ALL HANDS', sx + Math.round(sw / 2 - textWidth('ALL HANDS') / 2), sy + 17, '#8a90a0');
+      } else if (slide === 1) {
+        R(ctx, sx, sy, sw, sh, '#10131b');
+        const bars = [6, 9, 7, 12, 10, 15, 13, 18];
+        bars.forEach((b, i) => {
+          const bh = Math.round(b * (0.85 + 0.15 * Math.sin(now / 700 + i)));
+          R(ctx, sx + 4 + i * 6, sy + sh - 2 - bh, 4, bh, i === bars.length - 1 ? '#45e27a' : '#4d7cff');
+        });
+        R(ctx, sx + 2, sy + sh - 2, sw - 4, 1, '#3c404d');
+      } else {
+        R(ctx, sx, sy, sw, sh, '#0c0f14');
+        for (let i = 0; i < 5; i++) {
+          const lw = 8 + Math.floor(hash2(i, Math.floor(now / 6000)) * 30);
+          R(ctx, sx + 3, sy + 3 + i * 4, lw, 2, i === 0 ? '#ffffff' : '#596175');
+        }
+        drawText(ctx, '>_', sx + sw - 12, sy + sh - 7, Math.floor(now / 500) % 2 ? '#45e27a' : '#1c6b3a');
+      }
+      R(ctx, x + w / 2 - 1, y + h + 1, 2, 1, '#2a2c35');
+      R(ctx, x + w - 3, y + h - 2, 1, 1, '#45e27a');
+    },
+  });
+
+  // Lounge neon sign: orbit ring + first word of the office name
+  if (on('neon')) {
+    lights.push({ x: 29 * T + 2, y: 11 * T + 6, r: 26, color: '#46c8ff', a: 0.2 });
+    wallDecor.push({
+      draw: (ctx, now) => {
+        const markW = S.sign === 'logo' ? 10 : 0;
+        let s = firstWord(S.name);
+        while (s.length > 1 && textWidth(s) + markW > 54) s = s.slice(0, -1);
+        const cw = textWidth(s) + markW;
+        const w = Math.max(36, cw + 10), h = 11;
+        const x = Math.round(29 * T + 2 - w / 2), y = 11 * T + 1;
+        R(ctx, x, y, w, h, '#101116');
+        R(ctx, x, y, w, 1, '#2c2f3a');
+        const flicker = Math.floor(now / 90) % 97 === 0;
+        const glow = flicker ? 'rgba(80,200,255,0.12)' : 'rgba(80,200,255,0.35)';
+        const core = flicker ? '#6a8ea0' : '#e6f7ff';
+        const tx = x + Math.round((w - cw) / 2) + markW, ty = y + 3;
+        for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+          drawText(ctx, s, tx + dx, ty + dy, glow);
+          if (markW) drawOrbitMark(ctx, tx - markW + dx, y + 1 + dy, 7, glow);
+        }
+        drawText(ctx, s, tx, ty, core);
+        if (markW) drawOrbitMark(ctx, tx - markW, y + 1, 7, core);
+        R(ctx, x + 3, y + 9, w - 6, 1, flicker ? '#553344' : '#ff5fa2');
+      },
+    });
+  }
+  if (on('artwork')) wallDecor.push({
+    static: (ctx) => {
+      // framed painting: ringed planet
+      const x = 32 * T + 2, y = 11 * T + 1, w = 20, h = 11;
+      R(ctx, x - 1, y - 1, w + 2, h + 2, '#b08a4a');
+      R(ctx, x, y, w, h, '#161a33');
+      R(ctx, x + 3, y + 2, 1, 1, '#ffffff'); R(ctx, x + 16, y + 7, 1, 1, '#ffffff'); R(ctx, x + 12, y + 1, 1, 1, '#aab4ff');
+      R(ctx, x + 8, y + 3, 5, 5, '#e08a4a'); R(ctx, x + 9, y + 3, 3, 1, '#f3b27a'); R(ctx, x + 7, y + 4, 1, 3, '#e08a4a'); R(ctx, x + 13, y + 4, 1, 3, '#b8642e');
+      R(ctx, x + 5, y + 5, 11, 1, '#e8d9b0');
+      // small abstract print in the work room, between shelf and window
+      const px = 17 * T + 2, py = 14;
+      R(ctx, px - 1, py - 1, 14, 18, '#1a1b20');
+      R(ctx, px, py, 12, 16, '#efece4');
+      R(ctx, px + 2, py + 3, 8, 8, '#e0763a'); R(ctx, px + 4, py + 5, 4, 4, '#efece4');
+      R(ctx, px + 2, py + 12, 8, 1, '#2b2e39');
+    },
+  });
+  // Kitchen upper cabinets
+  wallDecor.push({
+    static: (ctx) => {
+      const x = 34 * T, y = 11 * T;
+      R(ctx, x, y, 4 * T, 10, '#3a3d47');
+      R(ctx, x, y + 10, 4 * T, 1, '#24262d');
+      for (let i = 0; i < 4; i++) {
+        R(ctx, x + i * T + 1, y + 1, T - 2, 8, '#454954');
+        R(ctx, x + i * T + (i % 2 ? 2 : T - 4), y + 4, 2, 2, '#b8bcc6');
+      }
+    },
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Furniture sprites
 function bookshelf(x, y) {
+  if (!on('bookshelves')) return;
+  spots.push({ x: x + 1, y: y + 1, facing: 'up', label: 'books', dwell: [4, 8] });
   const X = x * T, Y = y * T;
   const img = cached('shelf' + x, 32, 40, (c) => {
     R(c, 0, 2, 32, 38, '#5c3d22');
@@ -455,11 +718,33 @@ function bookshelf(x, y) {
   add({ x, y, w: 2, h: 1, block: true, sortY: Y + T, draw: (ctx) => ctx.drawImage(img, X, Y + T - 40) });
 }
 
-function plant(x, y, variant = 0) {
+const PLANT_STYLE = { leafy: 0, snake: 1, cactus: 2, palm: 3 };
+function plant(x, y, mixedVariant = 0) {
+  if (!on('plants')) return;
   const X = x * T, Y = y * T;
+  const variant = S.plantStyle in PLANT_STYLE ? PLANT_STYLE[S.plantStyle] : mixedVariant;
   const img = cached('plant' + variant, 16, 30, (c) => {
     const leaf = ['#2f7d3e', '#3f9b4e', '#5cbf5e', '#236030'];
-    if (variant === 1) {
+    if (variant === 2) {
+      // cactus with two arms and a flower
+      R(c, 6, 5, 4, 15, '#3f8f46'); R(c, 7, 5, 1, 15, '#62b85f'); R(c, 6, 4, 4, 1, '#3f8f46');
+      R(c, 2, 10, 2, 5, '#3f8f46'); R(c, 2, 14, 4, 2, '#3f8f46'); R(c, 2, 10, 1, 5, '#62b85f');
+      R(c, 12, 7, 2, 6, '#3f8f46'); R(c, 10, 12, 4, 2, '#3f8f46'); R(c, 13, 7, 1, 6, '#2c6b33');
+      for (const [sx, sy] of [[5, 8], [10, 11], [5, 15], [10, 17], [1, 12], [14, 9]]) R(c, sx, sy, 1, 1, '#d8f0c0');
+      R(c, 7, 2, 2, 2, '#ff6fa8'); R(c, 6, 3, 1, 1, '#ff9fc6'); R(c, 9, 3, 1, 1, '#ff9fc6');
+    } else if (variant === 3) {
+      // palm: fronds fanning out from the trunk top
+      R(c, 7, 9, 2, 11, '#8a6a3f'); R(c, 7, 11, 2, 1, '#6e532f'); R(c, 7, 15, 2, 1, '#6e532f');
+      const fronds = [[-1, -0.35], [1, -0.35], [-1, 0.25], [1, 0.25], [-0.35, -1], [0.4, -1]];
+      fronds.forEach(([dx, dy], i) => {
+        for (let t = 1; t <= 7; t++) {
+          const fx = Math.round(8 + dx * t), fy = Math.round(9 + dy * t + (Math.abs(dx) > 0.5 ? t * t * 0.06 : 0));
+          R(c, fx, fy, 1, 1, leaf[i % 2]);
+          if (t > 1 && t < 7) R(c, fx, fy + 1, 1, 1, leaf[3]);
+        }
+      });
+      R(c, 7, 8, 2, 2, leaf[2]);
+    } else if (variant === 1) {
       // tall snake plant
       for (let i = 0; i < 5; i++) {
         const lx = 4 + i * 2, lh = 12 + ((i * 7) % 6);
@@ -476,10 +761,12 @@ function plant(x, y, variant = 0) {
     }
     // pot
     R(c, 3, 20, 10, 1, '#1d1e24');
-    R(c, 3, 21, 10, 8, variant === 1 ? '#e8e4dc' : '#2a2c33');
+    const pot = [['#2a2c33', '#44474f', '#1f2026'], ['#e8e4dc', '#ffffff', '#c9c4b8'], ['#c0643c', '#d9825a', '#9a4a2a'], ['#b89a66', '#d1b683', '#927646']][variant];
+    R(c, 3, 21, 10, 8, pot[0]);
     R(c, 4, 29, 8, 1, '#1d1e24');
-    R(c, 3, 21, 10, 1, variant === 1 ? '#ffffff' : '#44474f');
-    R(c, 11, 22, 1, 6, variant === 1 ? '#c9c4b8' : '#1f2026');
+    R(c, 3, 21, 10, 1, pot[1]);
+    R(c, 11, 22, 1, 6, pot[2]);
+    if (variant === 3) for (let i = 0; i < 3; i++) R(c, 4, 23 + i * 2, 7, 1, pot[2]);
   });
   add({ x, y, w: 1, h: 1, block: true, sortY: Y + T, draw: (ctx) => ctx.drawImage(img, X, Y + T - 30) });
 }
@@ -513,6 +800,8 @@ function desk(index, x, y) {
   seats.push({ x: chairX, y: chairY, facing: 'down', offY: 2, kind: 'desk', desk: index });
   const chairImg = cached('chair-down', 16, 16, (c) => drawChair(c, 0, 0, 'down', '#1e2027', '#3a3e4b'));
   add({ x: chairX, y: chairY, w: 1, h: 1, block: true, sortY: chairY * T + 1, draw: (ctx) => ctx.drawImage(chairImg, chairX * T, chairY * T + 4) });
+  const dual = S.monitors === 2, lamp = on('deskLamps') && !dual, items = on('deskItems');
+  if (lamp) lights.push({ x: X + 43, y: Y - 8, r: 12, color: '#ffd27a', a: 0.22 });
   const img = cached('desk' + index, 48, 32, (c) => {
     const oy = 12; // desk surface starts at Y-5 => local 7
     // legs
@@ -533,20 +822,26 @@ function desk(index, x, y) {
     R(c, 32, 11, 2, 3, '#d9dce3'); R(c, 32, 11, 2, 1, '#ffffff');
     // right side items
     const v = index % 4;
-    if (v === 0) { R(c, 38, 8, 5, 6, '#e9e6dc'); R(c, 39, 9, 3, 1, '#9aa0ad'); R(c, 39, 11, 3, 1, '#9aa0ad'); R(c, 43, 10, 1, 2, '#e9e6dc'); } // papers
-    if (v === 1) { R(c, 38, 8, 7, 5, '#f4f4f4'); R(c, 37, 12, 9, 1, '#c9c9c9'); R(c, 39, 9, 5, 1, '#2f6fdb'); } // notebook
-    if (v === 2) { R(c, 38, 4, 6, 6, '#4aa35a'); R(c, 39, 3, 4, 2, '#6ccb6a'); R(c, 38, 10, 6, 4, '#d8d2c4'); } // plant
-    if (v === 3) { R(c, 37, 9, 9, 4, '#3b3f4c'); R(c, 38, 9, 7, 1, '#5d6272'); } // tablet
+    if (lamp) {
+      R(c, 40, 12, 6, 2, '#2a2c33'); R(c, 42, 4, 1, 8, '#3a3d47'); R(c, 42, 3, 3, 1, '#3a3d47');
+      R(c, 42, 1, 5, 3, '#f0b429'); R(c, 43, 1, 3, 1, '#ffd27a'); R(c, 43, 4, 3, 1, '#fff2c4');
+    }
+    if (!items || dual) return;
+    if (!lamp && v === 0) { R(c, 38, 8, 5, 6, '#e9e6dc'); R(c, 39, 9, 3, 1, '#9aa0ad'); R(c, 39, 11, 3, 1, '#9aa0ad'); R(c, 43, 10, 1, 2, '#e9e6dc'); } // papers
+    if (!lamp && v === 1) { R(c, 38, 8, 7, 5, '#f4f4f4'); R(c, 37, 12, 9, 1, '#c9c9c9'); R(c, 39, 9, 5, 1, '#2f6fdb'); } // notebook
+    if (!lamp && v === 2) { R(c, 38, 4, 6, 6, '#4aa35a'); R(c, 39, 3, 4, 2, '#6ccb6a'); R(c, 38, 10, 6, 4, '#d8d2c4'); } // plant
+    if (!lamp && v === 3) { R(c, 37, 9, 9, 4, '#3b3f4c'); R(c, 38, 9, 7, 1, '#5d6272'); } // tablet
     // mug
     R(c, 34, 6, 3, 4, ['#d23c3c', '#ffffff', '#2f6fdb', '#f0b429'][v]); R(c, 37, 7, 1, 2, '#bbbbbb');
   });
   add({ x, y, w: 3, h: 1, block: true, sortY: Y + T, desk: index, draw: (ctx) => ctx.drawImage(img, X, Y - 12) });
 }
 
-// Monitor drawn separately (dynamic screen). Positioned on desk's left side.
-export function monitorRect(d) {
-  return { x: d.x * T + 3, y: d.y * T - 17, w: 14, h: 11 };
+// Monitors drawn separately (dynamic screens): main on the desk's left, optional second on the right.
+export function monitorRect(d, i = 0) {
+  return i === 0 ? { x: d.x * T + 3, y: d.y * T - 17, w: 14, h: 11 } : { x: d.x * T + 32, y: d.y * T - 17, w: 14, h: 11 };
 }
+export const monitorCount = () => (S.monitors === 2 ? 2 : 1);
 
 function meetingTable() {
   const x = 29, y = 5; // 5x2
@@ -582,10 +877,19 @@ function meetingTable() {
   }
 }
 
+const SOFAS = {
+  charcoal: ['#353946', '#474c5c', '#23262f', '#e07b39'],
+  cream: ['#cfc6b4', '#e2dbcc', '#9d937f', '#2f6fdb'],
+  teal: ['#1f6f6b', '#2d8a84', '#134845', '#f0b429'],
+  mustard: ['#c3952b', '#d9ad45', '#8a661a', '#2b2e39'],
+  burgundy: ['#78263a', '#933548', '#4d1724', '#e8e1d3'],
+  olive: ['#5e6a35', '#737f46', '#3e4622', '#e07b39'],
+};
+export const SOFA_COLORS = SOFAS;
 function sofa(x, y, facing) {
   // 3 wide
   const X = x * T, Y = y * T;
-  const base = '#353946', light = '#474c5c', dark = '#23262f', pillow = '#e07b39';
+  const [base, light, dark, pillow] = SOFAS[S.sofaColor] || SOFAS.charcoal;
   const img = cached('sofa-' + facing, 48, 24, (c) => {
     if (facing === 'down') {
       R(c, 1, 0, 46, 10, dark);
@@ -597,7 +901,7 @@ function sofa(x, y, facing) {
       R(c, 16, 9, 1, 9, base); R(c, 31, 9, 1, 9, base);
       R(c, 0, 6, 4, 15, dark); R(c, 1, 7, 2, 12, base);
       R(c, 44, 6, 4, 15, dark); R(c, 45, 7, 2, 12, base);
-      R(c, 5, 4, 7, 6, pillow); R(c, 6, 5, 5, 1, '#f5a468');
+      R(c, 5, 4, 7, 6, pillow); R(c, 6, 5, 5, 1, shadeHex(pillow, 0.3));
       R(c, 38, 4, 6, 6, '#f2f2f2'); R(c, 39, 5, 4, 1, '#ffffff');
       R(c, 2, 20, 2, 2, '#15161a'); R(c, 44, 20, 2, 2, '#15161a');
     } else {
@@ -634,6 +938,7 @@ function coffeeTable(x, y) {
 }
 
 function beanbag(x, y, color) {
+  if (!on('beanBags')) return;
   const X = x * T, Y = y * T;
   const img = cached('bean' + color, 16, 16, (c) => {
     R(c, 2, 5, 12, 10, shadeHex(color, -0.35));
@@ -668,7 +973,7 @@ function kitchen() {
   });
   add({ x, y, w: 4, h: 1, block: true, sortY: Y + T, draw: (ctx) => ctx.drawImage(img, X, Y - 6) });
   // Coffee machine (col 35) dynamic (steam)
-  add({
+  if (on('coffeeMachine')) add({
     x: 35, y: 12, w: 0, h: 0, block: false, sortY: Y + T + 0.5,
     draw: (ctx, now) => {
       const mx = 35 * T + 2, my = Y - 16;
@@ -685,7 +990,10 @@ function kitchen() {
       ctx.fillRect(mx + 6 - (t % 2), my - 1 - t, 1, 2);
     },
   });
-  spots.push({ x: 35, y: 13, facing: 'up', label: 'coffee', dwell: [4, 7], icon: 'coffee' });
+  if (on('coffeeMachine')) {
+    spots.push({ x: 35, y: 13, facing: 'up', label: 'coffee', dwell: [4, 7], icon: 'coffee' });
+    lights.push({ x: 35 * T + 8, y: 12 * T - 10, r: 12, color: '#ff9a5c', a: 0.15 });
+  }
   spots.push({ x: 36, y: 13, facing: 'up', label: 'sink', dwell: [3, 5] });
   // Fridge (col 38)
   const fr = cached('fridge', 16, 34, (c) => {
@@ -725,6 +1033,7 @@ function kitchen() {
 }
 
 function serverRack(x, y) {
+  if (!on('serverRacks')) return;
   const X = x * T, Y = y * T;
   const img = cached('rack', 16, 32, (c) => {
     R(c, 1, 0, 14, 32, '#0b0b0e');
@@ -748,6 +1057,7 @@ function serverRack(x, y) {
 }
 
 function standingWhiteboard(x, y) {
+  if (!on('whiteboards')) return;
   const X = x * T, Y = y * T;
   const img = cached('swb', 48, 40, (c) => {
     R(c, 4, 26, 2, 14, '#5d6272'); R(c, 42, 26, 2, 14, '#5d6272');
@@ -767,6 +1077,7 @@ function standingWhiteboard(x, y) {
 }
 
 function roundTable(x, y) {
+  if (!on('collabTable')) return;
   const X = x * T, Y = y * T;
   const img = cached('rtable', 32, 32, (c) => {
     R(c, 13, 20, 6, 8, '#1d1e24'); R(c, 8, 28, 16, 2, '#1d1e24');
@@ -789,6 +1100,7 @@ function roundTable(x, y) {
 }
 
 function printer(x, y) {
+  if (!on('printer')) return;
   const X = x * T, Y = y * T;
   const img = cached('printer', 16, 26, (c) => {
     R(c, 1, 10, 14, 16, '#5c3d22'); R(c, 2, 11, 12, 14, '#6e4a2c'); R(c, 7, 17, 2, 1, '#c9a26b');
@@ -799,6 +1111,7 @@ function printer(x, y) {
   spots.push({ x: x + 1, y, facing: 'left', label: 'printer', dwell: [3, 5] });
 }
 function cabinet(x, y) {
+  if (!on('printer')) return;
   const X = x * T, Y = y * T;
   const img = cached('cabinet', 16, 26, (c) => {
     R(c, 1, 0, 14, 26, '#6b7280'); R(c, 2, 1, 12, 24, '#9aa0ad');
@@ -807,6 +1120,7 @@ function cabinet(x, y) {
   add({ x, y, w: 1, h: 1, block: true, sortY: Y + T, draw: (ctx) => ctx.drawImage(img, X, Y + T - 26) });
 }
 function arcade(x, y) {
+  if (!on('arcade')) return;
   const X = x * T, Y = y * T;
   add({
     x, y, w: 1, h: 1, block: true, sortY: Y + T,
@@ -814,7 +1128,7 @@ function arcade(x, y) {
       const oy = Y + T - 32;
       R(ctx, X + 1, oy, 14, 32, '#15161b');
       R(ctx, X + 2, oy + 1, 12, 4, '#e24b4b');
-      drawText(ctx, 'X', X + 6, oy + 0, '#ffffff');
+      drawText(ctx, 'GO', X + 5, oy + 0, '#ffffff');
       R(ctx, X + 3, oy + 7, 10, 9, '#0b0c10');
       const t = Math.floor(now / 200);
       R(ctx, X + 4 + (t % 8), oy + 9 + ((t >> 3) % 5), 1, 1, '#45e27a');
@@ -824,11 +1138,12 @@ function arcade(x, y) {
       R(ctx, X + 2, oy + 21, 12, 11, '#1d1e24'); R(ctx, X + 6, oy + 24, 4, 1, '#f0b429');
     },
   });
-  spots.push({ x, y: y - 1 >= 0 ? y : y, facing: 'up', label: 'arcade', dwell: [6, 10], standAt: { x, y: y - 1 } });
+  spots.push({ x, y: y - 1, facing: 'up', label: 'arcade', dwell: [6, 10] });
 }
 
 function pingPong(x, y) {
   // 3x2 table
+  if (!on('pingPong')) return;
   const X = x * T, Y = y * T;
   const img = cached('pingpong', 48, 34, (c) => {
     R(c, 3, 24, 2, 10, '#15161a'); R(c, 43, 24, 2, 10, '#15161a');
@@ -852,70 +1167,91 @@ function pingPong(x, y) {
 }
 
 // ---------------------------------------------------------------------------
-// Place everything
-// Work room: 8 desks in two rows of four
+// Place everything (re-run whenever settings change)
 const DESK_COLS = [2, 7, 12, 17];
-DESK_COLS.forEach((x, i) => desk(i, x, 6));
-DESK_COLS.forEach((x, i) => desk(i + 4, x, 11));
-bookshelf(5, 3);
-bookshelf(15, 3);
-plant(1, 3, 0);
-plant(22, 3, 1);
-plant(1, 20, 1);
-plant(22, 20, 0);
-plant(10, 3, 0);
-printer(1, 13);
-cabinet(1, 14);
-cabinet(1, 15);
-standingWhiteboard(4, 15);
-roundTable(11, 16);
-serverRack(20, 14);
-serverRack(21, 14);
-serverRack(22, 14);
-plant(8, 20, 0);
-plant(16, 20, 1);
-pingPong(16, 17);
-spots.push({ x: 21, y: 15, facing: 'up', label: 'servers', dwell: [4, 7] });
-spots.push({ x: 3, y: 4, facing: 'up', label: 'window', dwell: [5, 9] });
-spots.push({ x: 19, y: 4, facing: 'up', label: 'window', dwell: [5, 9] });
-spots.push({ x: 6, y: 4, facing: 'up', label: 'books', dwell: [4, 8] });
-spots.push({ x: 16, y: 4, facing: 'up', label: 'books', dwell: [4, 8] });
+function layout() {
+  furniture.length = 0; seats.length = 0; spots.length = 0; desks.length = 0; lights.length = 0; wallDecor.length = 0;
+  cache.clear();
+  registerWallDecor();
 
-// Meeting room
-meetingTable();
-plant(24, 3, 1);
-plant(38, 3, 0);
-plant(24, 9, 0);
-plant(38, 9, 1);
-spots.push({ x: 26, y: 3, facing: 'up', label: 'whiteboard', dwell: [5, 9] });
-spots.push({ x: 35, y: 3, facing: 'up', label: 'window', dwell: [5, 9] });
+  // Work room: 8 desks in two rows of four
+  DESK_COLS.forEach((x, i) => desk(i, x, 6));
+  DESK_COLS.forEach((x, i) => desk(i + 4, x, 11));
+  bookshelf(5, 3);
+  bookshelf(15, 3);
+  plant(1, 3, 0);
+  plant(22, 3, 1);
+  plant(1, 20, 1);
+  plant(22, 20, 0);
+  plant(10, 3, 0);
+  printer(1, 13);
+  cabinet(1, 14);
+  cabinet(1, 15);
+  standingWhiteboard(4, 15);
+  roundTable(11, 16);
+  serverRack(20, 14);
+  serverRack(21, 14);
+  serverRack(22, 14);
+  if (on('serverRacks')) spots.push({ x: 21, y: 15, facing: 'up', label: 'servers', dwell: [4, 7] });
+  plant(8, 20, 0);
+  plant(16, 20, 1);
+  pingPong(16, 17);
+  if (on('windows')) {
+    spots.push({ x: 3, y: 4, facing: 'up', label: 'window', dwell: [5, 9] });
+    spots.push({ x: 19, y: 4, facing: 'up', label: 'window', dwell: [5, 9] });
+    spots.push({ x: 35, y: 3, facing: 'up', label: 'window', dwell: [5, 9] });
+  }
 
-// Lounge
-sofa(26, 14, 'down');
-coffeeTable(26, 16);
-sofa(26, 18, 'up');
-beanbag(30, 15, '#4d7cff');
-beanbag(30, 17, '#e24b4b');
-plant(33, 12, 1);
-plant(24, 20, 0);
-arcade(33, 20);
-plant(24, 13, 0);
+  // Meeting room
+  meetingTable();
+  plant(24, 3, 1);
+  plant(38, 3, 0);
+  plant(24, 9, 0);
+  plant(38, 9, 1);
+  if (on('whiteboards')) spots.push({ x: 26, y: 3, facing: 'up', label: 'whiteboard', dwell: [5, 9] });
 
-// Kitchen
-kitchen();
-spots.push({ x: 37, y: 19, facing: 'down', label: 'kitchen', dwell: [3, 6] });
+  // Lounge
+  sofa(26, 14, 'down');
+  coffeeTable(26, 16);
+  sofa(26, 18, 'up');
+  beanbag(30, 15, '#4d7cff');
+  beanbag(30, 17, '#e24b4b');
+  plant(33, 12, 1);
+  plant(24, 20, 0);
+  arcade(33, 20);
+  plant(24, 13, 0);
 
-// ---------------------------------------------------------------------------
-// Walkability
+  // Kitchen
+  kitchen();
+  spots.push({ x: 37, y: 19, facing: 'down', label: 'kitchen', dwell: [3, 6] });
+
+  // Walkability
+  for (let y = 0; y < ROWS; y++) {
+    if (!blocked[y]) blocked[y] = [];
+    for (let x = 0; x < COLS; x++) blocked[y][x] = !isFloor(x, y);
+  }
+  for (const f of furniture) {
+    if (!f.block) continue;
+    for (let dy = 0; dy < f.h; dy++) for (let dx = 0; dx < f.w; dx++) blocked[f.y + dy][f.x + dx] = true;
+  }
+  // Drop any idle spot that ended up unreachable
+  for (let i = spots.length - 1; i >= 0; i--) if (blocked[spots[i].y][spots[i].x]) spots.splice(i, 1);
+}
+
 export const blocked = [];
-for (let y = 0; y < ROWS; y++) {
-  blocked.push([]);
-  for (let x = 0; x < COLS; x++) blocked[y].push(!isFloor(x, y));
-}
-for (const f of furniture) {
-  if (!f.block) continue;
-  for (let dy = 0; dy < f.h; dy++) for (let dx = 0; dx < f.w; dx++) blocked[f.y + dy][f.x + dx] = true;
-}
-// fix arcade spot stand position
-for (const s of spots) if (s.standAt) { s.x = s.standAt.x; s.y = s.standAt.y; delete s.standAt; }
 export const walkable = (x, y) => x >= 0 && y >= 0 && x < COLS && y < ROWS && !blocked[y][x];
+
+// Merge settings over the fallback defaults and rebuild the office.
+export function applySettings(next) {
+  const d = FALLBACK_SETTINGS;
+  const n = next || {};
+  S = {
+    ...d, ...n,
+    walls: { ...d.walls, ...(n.walls || {}) },
+    floors: { ...d.floors, ...(n.floors || {}) },
+    accessories: { ...d.accessories, ...(n.accessories || {}) },
+  };
+  layout();
+  return S;
+}
+applySettings(FALLBACK_SETTINGS);

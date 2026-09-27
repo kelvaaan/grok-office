@@ -1,12 +1,13 @@
 {
   "name": "grok-office",
   "version": "1.0.0",
-  "description": "A pixel-art virtual office whose employees are your Grok Bot agents.",
+  "description": "Orbit Group pixel-art virtual office (built on Grok Office) whose employees are your Grok Bot agents.",
   "license": "MIT",
   "type": "module",
   "main": "server.js",
   "engines": { "node": ">=18" },
   "scripts": {
+    "logo-assets": "node scripts/make-logo-assets.mjs",
     "start": "node server.js",
     "demo": "node scripts/demo.mjs",
     "bridge": "node scripts/bridge-gist.mjs",

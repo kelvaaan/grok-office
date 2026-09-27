@@ -3,19 +3,25 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Grok Office</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'%3E%3Crect width='16' height='16' fill='%230b0b0e'/%3E%3Crect x='4' y='3' width='8' height='1' fill='%23fff'/%3E%3Crect x='4' y='12' width='8' height='1' fill='%23fff'/%3E%3Crect x='3' y='4' width='1' height='8' fill='%23fff'/%3E%3Crect x='12' y='4' width='1' height='8' fill='%23fff'/%3E%3Cpath d='M12 3h1v1h-1zM11 4h1v1h-1zM10 5h1v1h-1zM9 6h1v1H9zM8 7h1v1H8zM7 8h1v1H7zM6 9h1v1H6zM5 10h1v1H5zM4 11h1v1H4zM3 12h1v1H3z' fill='%23fff'/%3E%3C/svg%3E" />
+  <title>Orbit Group · Office</title>
+  <link rel="icon" type="image/png" href="assets/orbit-mark.png" />
+  <link rel="apple-touch-icon" href="assets/orbit-mark.png" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header id="topbar">
     <div class="brand">
-      <span class="logo" aria-hidden="true"></span>
-      <strong id="office-name">Grok HQ</strong>
+      <img id="brand-logo" class="brand-logo" src="assets/orbit-group-logo-white.png" alt="Orbit Group" />
+      <img id="brand-mark" class="brand-mark" src="assets/orbit-mark-white.png" alt="" hidden />
+      <strong id="office-name" hidden>Orbit Group</strong>
       <span class="sub">virtual office</span>
     </div>
     <nav id="roster" aria-label="Employees"></nav>
     <div class="tools">
+      <button id="customize-btn" class="px-btn" type="button" aria-expanded="false" aria-controls="customize" title="Customize the office">
+        <svg viewBox="0 0 8 8" width="12" height="12" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M0 0h1v1h-1zM1 0h1v1h-1zM2 0h1v1h-1zM3 0h1v1h-1zM4 0h1v1h-1zM5 0h1v1h-1zM0 1h1v1h-1zM6 1h1v1h-1zM0 2h1v1h-1zM1 2h1v1h-1zM2 2h1v1h-1zM3 2h1v1h-1zM4 2h1v1h-1zM5 2h1v1h-1zM7 2h1v1h-1zM7 3h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM3 5h1v1h-1zM2 6h1v1h-1zM3 6h1v1h-1zM4 6h1v1h-1zM2 7h1v1h-1zM3 7h1v1h-1zM4 7h1v1h-1z"/></svg>
+        Customize
+      </button>
       <span id="clock" class="clock"></span>
       <span id="conn" class="conn" title="Connecting…"></span>
       <div class="zoom">
@@ -27,6 +33,17 @@
   </header>
   <main id="stage">
     <canvas id="office" aria-label="Pixel art office"></canvas>
+    <aside id="customize" hidden aria-label="Customize office">
+      <div class="c-head">
+        <h2>Customize office</h2>
+        <button id="c-close" class="close" type="button" title="Close (Esc)">×</button>
+      </div>
+      <div id="c-body" class="c-body"></div>
+      <div class="c-foot">
+        <button id="c-reset" class="px-btn danger" type="button">Reset to default</button>
+        <span id="c-status" class="c-status"></span>
+      </div>
+    </aside>
     <aside id="panel" hidden>
       <button id="p-close" class="close" title="Close (Esc)">×</button>
       <div class="p-head">

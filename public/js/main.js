@@ -1,5 +1,6 @@
-// Grok Office — client: simulation, rendering and UI.
-import { T, W, H, COLS, ROWS, buildBackground, drawWallDecor, furniture, seats, spots, desks, walkable, ZONES, skyPhase, monitorRect } from './office.js';
+// Grok Office (Orbit Group edition) — client: simulation, rendering and UI.
+import { T, W, H, COLS, ROWS, buildBackground, drawWallDecor, furniture, seats, spots, desks, walkable, ZONES, skyPhase, monitorRect, monitorCount, lights, applySettings, settings } from './office.js';
+import { initCustomize } from './customize.js';
 import { buildCharacter, resolveLook, icon } from './sprites.js';
 import { drawText } from './font.js';
 
@@ -13,7 +14,7 @@ const params = new URLSearchParams(location.search);
 const world = {
   agents: new Map(), // id -> agent data from server
   chars: new Map(), // id -> Char
-  officeName: 'Grok HQ',
+  officeName: 'Orbit Group',
   date: new Date(),
   phase: 'day',
   selected: null,
@@ -21,7 +22,7 @@ const world = {
 };
 window.__grokOffice = world; // handy for debugging / tests
 
-const background = buildBackground();
+let background = buildBackground();
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -270,8 +271,7 @@ function upsertAgent(a, now = performance.now()) {
 }
 
 function applySnapshot(snap) {
-  world.officeName = snap.office?.name || 'Grok HQ';
-  document.getElementById('office-name').textContent = world.officeName;
+  if (snap.office?.settings) setOfficeSettings(snap.office.settings, 'server');
   const ids = new Set(snap.agents.map((a) => a.id));
   for (const id of [...world.chars.keys()]) if (!ids.has(id)) { release(id); world.chars.delete(id); world.agents.delete(id); }
   for (const a of snap.agents) upsertAgent(a);
@@ -283,6 +283,7 @@ function connect() {
   const es = new EventSource('/api/events');
   es.addEventListener('snapshot', (e) => { applySnapshot(JSON.parse(e.data)); setConn(true); });
   es.addEventListener('agent', (e) => { upsertAgent(JSON.parse(e.data)); renderRoster(); renderPanel(); });
+  es.addEventListener('office', (e) => setOfficeSettings(JSON.parse(e.data), 'server'));
   es.onopen = () => setConn(true);
   es.onerror = () => setConn(false);
 }
@@ -294,8 +295,60 @@ function setConn(ok) {
 }
 
 // ---------------------------------------------------------------------------
+// Office customization: rebuild the map, then keep every character's plan valid
+let customize = null;
+function setOfficeSettings(s, source = 'local') {
+  if (source === 'server' && customize && customize.isDirty()) return; // local edits in flight win
+  const S = applySettings(s);
+  background = buildBackground();
+  remapTargets();
+  world.officeName = S.name;
+  renderBrand(S);
+  if (source === 'server' && customize) customize.sync(S);
+}
+
+// After a rebuild seats/spots are new objects and some may be gone (e.g. arcade
+// toggled off). Re-attach characters to equivalent ones, or send them elsewhere.
+function remapTargets(now = performance.now()) {
+  for (const c of world.chars.values()) {
+    const t = c.target;
+    let ok = false;
+    if (t && t.seat) {
+      const ns = seats.find((s) => s.x === t.seat.x && s.y === t.seat.y && s.kind === t.seat.kind && s.desk === t.seat.desk);
+      if (ns) { t.seat = ns; ok = true; }
+    } else if (t && t.spot) {
+      const ns = spots.find((s) => s.x === t.spot.x && s.y === t.spot.y && s.label === t.spot.label);
+      if (ns) { t.spot = ns; ok = true; }
+    } else if (t) {
+      ok = walkable(t.x, t.y);
+    }
+    if (!ok) {
+      release(c.id);
+      c.target = null;
+      c.dwellUntil = 0;
+      if (c.mode === 'sit') c.mode = 'stand';
+      c.plan(now, true);
+    } else if (c.mode === 'walk') {
+      c.goTo(t, now); // obstacles may have changed: re-path
+    }
+  }
+}
+
+function renderBrand(S) {
+  const isOrbit = S.name.trim().toLowerCase() === 'orbit group';
+  const logo = document.getElementById('brand-logo');
+  const mark = document.getElementById('brand-mark');
+  const name = document.getElementById('office-name');
+  logo.hidden = !(S.sign === 'logo' && isOrbit);
+  mark.hidden = !(S.sign === 'logo' && !isOrbit);
+  name.hidden = S.sign === 'logo' && isOrbit;
+  name.textContent = S.name;
+  document.title = `${S.name} · Office`;
+}
+
+// ---------------------------------------------------------------------------
 // View / zoom
-const view = { zoom: 2, ox: 0, oy: 0, fit: true, dpr: 1 };
+const view = { zoom: 2, ox: 0, oy: 0, fit: true, dpr: 1, inset: 0 }; // inset: canvas px covered by the customize panel
 function resize() {
   const wrap = document.getElementById('stage');
   const dpr = window.devicePixelRatio || 1;
@@ -308,15 +361,17 @@ function resize() {
   clampPan();
 }
 function fitZoom() {
-  view.zoom = Math.max(1, Math.floor(Math.min(canvas.width / W, canvas.height / H)));
+  const availW = canvas.width - view.inset;
+  view.zoom = Math.max(1, Math.floor(Math.min(availW / W, canvas.height / H)));
   view.fit = true;
-  view.ox = Math.floor((canvas.width - W * view.zoom) / 2);
+  view.ox = view.inset + Math.floor((availW - W * view.zoom) / 2);
   view.oy = Math.floor((canvas.height - H * view.zoom) / 2);
 }
 function clampPan() {
   const sw = W * view.zoom, sh = H * view.zoom;
-  if (sw <= canvas.width) view.ox = Math.floor((canvas.width - sw) / 2);
-  else view.ox = Math.min(0, Math.max(canvas.width - sw, view.ox));
+  const availW = canvas.width - view.inset;
+  if (sw <= availW) view.ox = view.inset + Math.floor((availW - sw) / 2);
+  else view.ox = Math.min(view.inset, Math.max(canvas.width - sw, view.ox));
   if (sh <= canvas.height) view.oy = Math.floor((canvas.height - sh) / 2);
   else view.oy = Math.min(0, Math.max(canvas.height - sh, view.oy));
 }
@@ -344,10 +399,13 @@ function occupantOfDesk(index) {
   return null;
 }
 
-function drawMonitor(g, d, now) {
-  const m = monitorRect(d);
+const ALT_ACTIVITY = { command: 'read', write: 'read', read: 'write' };
+function drawMonitor(g, d, now, idx = 0) {
+  const m = monitorRect(d, idx);
   const c = occupantOfDesk(d.index);
-  const a = c && c.agent;
+  const a0 = c && c.agent;
+  // the second screen shows something complementary to the first
+  const a = a0 && idx === 1 && a0.status === 'working' ? { ...a0, activity: ALT_ACTIVITY[a0.activity || 'write'] } : a0;
   const x = m.x, y = m.y;
   g.fillStyle = '#15161b'; g.fillRect(x, y, 14, 12);
   g.fillStyle = '#2a2c33'; g.fillRect(x + 5, y + 12, 4, 3); g.fillRect(x + 3, y + 14, 8, 1);
@@ -432,7 +490,8 @@ function drawTypingHands(g, d, c, now) {
 
 function renderScene(now) {
   world.date = timeNow();
-  world.phase = params.get('phase') || skyPhase(world.date);
+  const lighting = settings().lighting;
+  world.phase = params.get('phase') || (lighting && lighting !== 'auto' ? lighting : skyPhase(world.date));
   const g = sctx;
   g.imageSmoothingEnabled = false;
   g.drawImage(background, 0, 0);
@@ -447,8 +506,10 @@ function renderScene(now) {
     it.draw();
     if (it.f && it.f.desk !== undefined) {
       const d = desks[it.f.desk];
-      const gl = drawMonitor(g, d, now);
-      if (gl) glows.push(gl);
+      for (let mi = 0; mi < monitorCount(); mi++) {
+        const gl = drawMonitor(g, d, now, mi);
+        if (gl) glows.push(gl);
+      }
       const occ = occupantOfDesk(d.index);
       if (occ) drawTypingHands(g, d, occ, now);
     }
@@ -465,10 +526,8 @@ function renderScene(now) {
     if (world.phase === 'night' || world.phase === 'dusk') {
       g.save();
       g.globalCompositeOperation = 'lighter';
-      const lights = [...glows.map((l) => ({ ...l, r: 14, a: 0.22 })),
-        { x: 30 * T, y: 11 * T + 6, r: 26, color: '#46c8ff', a: 0.2 },
-        { x: 35 * T + 8, y: 12 * T - 10, r: 12, color: '#ff9a5c', a: 0.15 }];
-      for (const l of lights) {
+      const all = [...glows.map((l) => ({ ...l, r: 14, a: 0.22 })), ...lights];
+      for (const l of all) {
         const grad = g.createRadialGradient(l.x, l.y, 1, l.x, l.y, l.r);
         grad.addColorStop(0, hexA(l.color, l.a));
         grad.addColorStop(1, hexA(l.color, 0));
@@ -748,10 +807,11 @@ document.getElementById('zoom-in').onclick = () => setZoom(view.zoom + 1);
 document.getElementById('zoom-out').onclick = () => setZoom(view.zoom - 1);
 document.getElementById('zoom-fit').onclick = () => { fitZoom(); document.getElementById('zoom-level').textContent = `${view.zoom}x`; };
 window.addEventListener('keydown', (e) => {
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return;
   if (e.key === '+' || e.key === '=') setZoom(view.zoom + 1);
   else if (e.key === '-') setZoom(view.zoom - 1);
   else if (e.key === '0') document.getElementById('zoom-fit').click();
-  else if (e.key === 'Escape') select(null);
+  else if (e.key === 'Escape') { if (customize && customize.isOpen()) customize.close(); else select(null); }
 });
 window.addEventListener('resize', () => { resize(); document.getElementById('zoom-level').textContent = `${view.zoom}x`; });
 
@@ -768,5 +828,18 @@ for (const s of [...spots]) if (!walkable(s.x, s.y)) console.warn('unwalkable sp
 resize();
 document.getElementById('zoom-level').textContent = `${view.zoom}x`;
 tickClock();
+renderBrand(settings());
+// While the customize panel is open, fit the office into the space beside it.
+function setInset(px) {
+  view.inset = Math.round(px * view.dpr);
+  if (view.fit) fitZoom();
+  clampPan();
+  document.getElementById('zoom-level').textContent = `${view.zoom}x`;
+}
+customize = initCustomize({
+  onChange: (s) => setOfficeSettings(s, 'local'),
+  onOpen: (width) => setInset(window.innerWidth > 900 ? width + 28 : 0),
+  onClose: () => setInset(0),
+});
 connect();
 requestAnimationFrame(frame);
