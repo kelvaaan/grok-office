@@ -71,6 +71,87 @@ SPEED=3 npm run demo         # faster
 BASE_URL=http://127.0.0.1:3200 node scripts/demo.mjs
 ```
 
+## Live activity from Grok Bot agents (box → Mac)
+
+The office can mirror **real** activity of the Grok Bot agents instead of the demo.
+The agents run on a Linux "box"; the office runs on your Mac. Neither can reach the other directly,
+so a secret GitHub gist is used as a tiny mailbox:
+
+```
+box: scripts/box-publisher.mjs ──gh api PATCH──▶ secret gist ◀──poll── Mac: scripts/bridge-gist.mjs ──POST /api/status──▶ office
+```
+
+### Signal & heuristic (box side)
+
+The per-agent folders under `/home/box/agent-data/agents/<id>/` turned out **not** to change while an
+agent works (conversation state lives server-side), so they can't be used. What does change is the
+agent's **desktop exec-daemon** — every Grok Bot agent gets its own desktop (`DISPLAY=:N`) whose
+`exec-daemon` process executes that agent's Shell/Read/computer-use tool calls:
+
+- `/proc/<exec-daemon pid>/io` (`rchar`+`wchar`) moves on every tool call and is completely flat while
+  nobody uses that desktop;
+- `/tmp/sand-window-N/exec-daemon.log` gains an `approval gate reached` line per Shell call
+  (only line types are counted — no content is read into the feed).
+
+An employee is **working** if their desktop showed tool activity in the last `ACTIVE_WINDOW_SEC`
+(default **90 s**), otherwise **idle**. Activity hint: `command` if a Shell call happened in that window,
+else `read` (other tool use); the office shows the generic labels "Running commands" / "Using tools".
+The published JSON contains only `id`, `status`, `activity`, `updatedAt` (+ a heartbeat).
+
+Limits: a turn that only thinks, searches the web or calls remote MCP tools for more than 90 s without
+touching the box looks idle; a sub-agent's work counts for the agent whose desktop it uses.
+
+### Linking desktops to employees
+
+Desktops are not labelled with agent ids, so each agent registers its desktop once, from its own Shell:
+
+```bash
+node /workspace/grok-office/scripts/register-agent.mjs jeremy     # uses the caller's $DISPLAY
+node /workspace/grok-office/scripts/register-agent.mjs --list     # show data/agent-map.json
+node /workspace/grok-office/scripts/register-agent.mjs jared :4   # or map by hand
+```
+
+Unlinked employees are shown as idle with "Not linked to an agent desktop yet".
+The publisher re-reads the map on every sample, so no restart is needed.
+
+### Run the publisher (box)
+
+```bash
+cd /workspace/grok-office
+echo '{"gistId":"<secret gist id>","file":"grok-office-status.json"}' > data/publisher.json   # git-ignored
+scripts/publisher-ctl.sh start      # also: stop | restart | status | log   (log: /workspace/grok-office-publisher.log)
+```
+
+It samples every 5 s, publishes when something changes (at most every 15 s) and sends a heartbeat every
+120 s (~1–2 k gist revisions/day, well inside GitHub's authenticated rate limits). Tunables:
+`ACTIVE_WINDOW_SEC`, `SAMPLE_SEC`, `MIN_PUBLISH_SEC`, `HEARTBEAT_SEC`, `DRY_RUN=1`.
+
+### Run the bridge (Mac)
+
+```bash
+cd ~/src/grok-office
+echo '{"gistId":"<secret gist id>","user":"kelvaaan","file":"grok-office-status.json"}' > data/bridge.json   # git-ignored
+pkill -f scripts/demo.mjs    # the demo would fight the bridge
+perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' nohup node scripts/bridge-gist.mjs >> /tmp/grok-office-bridge.log 2>&1 < /dev/null &
+```
+
+The bridge combines two sources and keeps whichever heartbeat is newest:
+
+- `gist.githubusercontent.com/<user>/<id>/raw/…` every 15 s — not rate limited, but GitHub serves the
+  latest revision with a lag of roughly 30 s–2 min (cache-busting query strings don't help);
+- `api.github.com/gists/<id>` — always fresh but limited to 60 requests/hour without a token (conditional
+  `304`s count too), so the bridge spreads that budget using the rate-limit headers (~1 call/min).
+  Set `GITHUB_TOKEN` (any token, no scopes needed for a gist you can read) to poll the API every 15 s instead.
+
+(`gist.github.com` itself — git access to gists — is often unreachable from mainland China, so it isn't used.)
+Typical latency from real activity to the office: **~30–60 s** for idle→working and 90 s + ~30–60 s for
+working→idle. If the feed hasn't produced a fresh heartbeat for `STALE_SEC` (default 480 s) — box down,
+publisher stopped, or GitHub unreachable — all mirrored employees are marked **offline** ("Status feed stale")
+until it recovers. Network errors are retried with back-off; the bridge never exits on its own.
+
+Privacy: the gist is *secret* (unlisted, not private — anyone with the URL can read it); it contains only
+employee ids and working/idle/offline. Keep the gist id out of the public repo (it lives in `data/*.json`).
+
 ## API
 
 All endpoints are on `http://127.0.0.1:3200`. Because the server only listens on
@@ -184,7 +265,11 @@ public/js/office.js  map, furniture & environment pixel art
 public/js/sprites.js character sprites & icons
 public/js/main.js    simulation (BFS pathfinding, behaviours), rendering, UI
 public/js/font.js    3x5 pixel font for signs and screens
-scripts/demo.mjs     demo driver
+scripts/demo.mjs     demo driver (fake statuses)
+scripts/box-publisher.mjs  box: agent desktop activity -> secret gist
+scripts/publisher-ctl.sh   box: start/stop/restart/status the publisher
+scripts/register-agent.mjs box: link an agent desktop (DISPLAY) to an employee
+scripts/bridge-gist.mjs    Mac: gist -> local /api/status
 scripts/screenshot.mjs  dev helper (needs playwright-core)
 ```
 

@@ -9,6 +9,8 @@
   "scripts": {
     "start": "node server.js",
     "demo": "node scripts/demo.mjs",
+    "bridge": "node scripts/bridge-gist.mjs",
+    "publisher": "node scripts/box-publisher.mjs",
     "check": "node scripts/check-sprites.mjs"
   },
   "keywords": ["pixel-art", "virtual-office", "agents", "grok"],
